@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 |---|---|---|
 | `INSTALL_DIR` | `<当前目录>/https_ssl` | 安装目录 |
 | `PANEL_PORT` | `2002` | 面板端口 |
-| `NETWORK` | `bridge` | `bridge` 或 `host`。**`host` 模式下面板里新增反代时端口填了即生效**，不用改 compose 也不用重建容器 |
+| `NETWORK` | `host` | `host`（默认）或 `bridge`。**`host` 模式下面板里新增反代时端口填了即生效**，不用改 compose 也不用重建容器；`bridge` 用 `docker-compose.bridge.yml`，端口要先写进 `ports` 再重建容器 |
 | `PROXY_PORT` | `14000` | 示例反向代理端口。仅 `bridge` 模式有效 |
 | `ADMIN_PASSWORD` | `admin` | 管理员初始密码，登录后请到「设置」页修改 |
 | `REPO` | 本仓库 | 代码仓库地址 |
@@ -81,36 +81,57 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 > `docker` 组（飞牛 NAS 的 `admin` 就是这种），先 `sudo -v` 缓存一次凭据，
 > 或者用 `curl -fsSL <地址> | sudo bash` 直接以 root 执行。
 
-### 桥接模式 vs host 模式（重要）
+### 网络模式（默认 host）
 
-**为什么要区分**：Docker 桥接网络的端口映射在**容器创建时就固定了**，运行时加不了。
-所以默认的 `bridge` 模式下，每加一个反向代理端口，都得先改 `docker-compose.yml` 的
-`ports` 再 `docker compose up -d` 重建容器，否则外部连不上——**面板里填完端口不等于对外可用**。
+**默认就是 `host` 模式**，所以：**面板里填端口 → 点启用 → 结束，能访问了。**
+不用改 compose，也不用重建容器。
 
-`host` 模式让容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口，
-**面板里填了即生效，永远不需要重建容器**。
-
-| | `bridge`（默认） | `host` |
+| | `host`（默认） | `bridge`（备选） |
 |---|---|---|
-| 反代端口 | 每加一个都要改 compose + 重建 | 填了即生效 |
-| 网络隔离 | 有 | 无（容器与宿主机共用网络栈） |
-| 平台 | 全平台（含 Mac / Windows 的 Docker Desktop） | **仅 Linux** |
-| 端口被宿主机别的服务占用 | 容器起不来 | 只有那一个站点加载失败 |
+| 加一个反代端口 | 填端口 → 启用 → **完成** | 填端口 → 启用 → **改 `ports` → 重启容器** → 才能访问 |
+| 网络隔离 | 无（容器与宿主机共用网络栈） | 有 |
+| 平台 | **仅 Linux** | 全平台（含 Mac / Windows 的 Docker Desktop） |
+| 端口被宿主机别的服务占用 | 只有那一个站点加载失败 | 容器起不来 |
 
-**切到 host 模式**：
+**为什么有这个差别**：Docker 桥接网络的端口映射在**容器创建时就固定了**，运行时加不了。
+所以 `bridge` 模式下每加一个端口，都得先改 compose 的 `ports` 再 `docker compose up -d`
+重启容器，否则外部连不上——**面板里填完端口不等于对外可用**。
+`host` 模式让容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口，**填了即生效**。
+
+**什么时候才需要 `bridge`**：
+
+1. 在 macOS / Windows 上跑 Docker Desktop —— host 模式不被支持；
+2. 需要保留容器的网络隔离。
+
+切到 `bridge`：
 
 ```bash
 # 一键安装时直接选
-NETWORK=host INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
+NETWORK=bridge INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
 
-# 已经装好的，换成 host 模式
+# 已经装好的，换成 bridge
 cd /vol1/docker/https_ssl
 sudo docker compose down
-sudo docker compose -f docker-compose.host.yml up -d --build
+sudo docker compose -f docker-compose.bridge.yml up -d --build
 ```
 
-> host 模式下 `PANEL_PORT` / `PROXY_PORT` 不再通过端口映射生效，
-> 面板端口改由 `.env` 里的 `QILIN_PORT` 决定。
+> `bridge` 模式下 `PANEL_PORT` / `PROXY_PORT` 通过 compose 的 `ports` 映射生效；
+> `host` 模式下没有端口映射，面板端口由 `.env` 里的 `QILIN_PORT` 决定。
+
+**用 `bridge` 又嫌每次都要改 compose？** 可以把一整段端口一次性放行：
+
+```yaml
+    ports:
+      - "2002:2002"
+      - "15000-15999:15000-15999"    # 一整段反代端口
+```
+
+之后在这个区间里新增反代端口就都不用再改 compose 了。代价是这一段端口被整体占住，
+且 Docker 会为区间内每个端口建一条转发规则，**区间别开太大**（几百个以内尚可）。
+
+> 除此之外还有一条路是挂载 `/var/run/docker.sock` 让面板自动改配置并重建容器，
+> **不推荐**：容器等于拿到宿主机 root，而且每次重建会中断所有反代、
+> 并重置 `users.json`（你改过的面板密码会丢）。
 
 ### 手动安装
 
@@ -184,22 +205,46 @@ IP 地址：192.168.5.3
 
 ### 3. 配置反向代理
 
-先把要用的端口写进 `docker-compose.yml`（容器无法感知宿主的端口映射）：
+**它在做什么**：把**别的设备**上的 HTTP 服务，用**本机（跑面板的这台机器）的端口**
+代理成 HTTPS 服务。TLS 在本机终止，后端服务在哪台机器上都不影响。
 
-```yaml
-    ports:
-      - "2002:2002"      # 管理面板
-      - "14000:14000"    # 反向代理服务
-```
-
-改完执行 `docker compose up -d`。然后到面板「反向代理」页：
+**默认的 host 模式不用做任何额外操作**——端口填了即生效，直接到面板「反向代理」页：
 
 - 服务名称：`nas`
 - 原本地址：`http://192.168.5.3:4000`
 - 反代后地址：`https://192.168.5.3:14000`
 - 证书：选刚才签发的 `nas`
 
-保存后点开关启用即可，**不需要重启容器**。
+**两个地址怎么填**：
+
+| 字段 | 填什么 |
+|---|---|
+| 原本地址 | 后端服务的真实地址，**可以是别的设备**（如 `http://192.168.5.5:5244`） |
+| 反代后地址 | **IP 只能填本机**（跑面板的这台机器），如 `https://192.168.5.3:5245` |
+
+原因：HTTPS 是在本机终止的，浏览器敲的也是本机地址，所以证书的 SAN 里必须有本机 IP，
+访问时也只能用本机 IP。
+
+**后端自己就是 HTTPS？** 不用让面板再签一张——「证书类型」选**上传自定义证书**，
+把后端服务自己的证书和私钥传上来即可，原本地址照旧填后端的原 IP 和端口。
+
+**保存 ≠ 启用**，两步都要做：
+
+1. 点「创建」保存 —— 服务记录建好了，但状态是未启用，端口还没开始监听；
+2. 在列表里点开关启用 —— 这一步才生成 nginx 站点并热加载，**不需要重启容器**。
+
+启用后立刻访问 `https://192.168.5.3:14000` 验证。端口挑宿主机没被占用的
+（`ss -lntp | grep 14000`）；万一撞车，只有这一个站点加载失败，面板会显示 nginx
+的报错原文，其它已启用服务不受影响。
+
+> **用 `bridge` 模式的话**，上面这步之前还要先把端口写进 `docker-compose.bridge.yml`
+> 的 `ports`（容器无法感知宿主的端口映射），再 `docker compose up -d` 重建容器：
+>
+> ```yaml
+>     ports:
+>       - "2002:2002"      # 管理面板
+>       - "14000:14000"    # 反向代理服务
+> ```
 
 ---
 
@@ -297,7 +342,9 @@ server {
 这是正常的，它就是个 HTTP 页面。注意 `https://<服务器IP>:2002` 是打不开的，
 面板本身不提供 TLS。想让它也变成 HTTPS，用面板自带的反向代理功能就行：
 
-1. 先在 `docker-compose.yml` 的 `ports` 里加一个端口（别和已有反代冲突）：
+1. **默认的 host 模式跳过这一步**——端口直接就是宿主机端口，填了即生效。
+   用 `bridge` 模式的话，先在 `docker-compose.bridge.yml` 的 `ports` 里加一个端口
+   （别和已有反代冲突）：
 
    ```yaml
        ports:
@@ -306,9 +353,8 @@ server {
          - "12002:12002"    # 反向代理：面板自身 HTTPS
    ```
 
-   > 如果是 **host 模式**，跳过这一步——端口直接就是宿主机端口，填了即生效。
-
-2. `docker compose up -d` 重建容器让端口生效（host 模式同样跳过）。
+2. `bridge` 模式下执行 `docker compose -f docker-compose.bridge.yml up -d`
+   重建容器让端口生效（host 模式跳过）。
 
 3. 面板「反向代理」→ 新增：
 
@@ -375,8 +421,9 @@ docker exec qilin_ssl chmod 600 /app/users.json
 docker restart qilin_ssl
 ```
 
-**3. 反代端口必须先声明。** 新加的反代端口没写进 `docker-compose.yml` 的 `ports`，
-宿主就访问不到。
+**3. 反代端口要先声明（仅 `bridge` 模式）。** `bridge` 模式下新加的反代端口没写进
+`docker-compose.bridge.yml` 的 `ports`，宿主就访问不到。**默认的 `host` 模式没有这个问题**——
+端口填了即生效。另外，面板里「创建」之后还要**点开关启用**，只保存不启用不会监听。
 
 **4. 登录后老掉线。** `.env` 里没设 `QILIN_SECRET_KEY` 时，每次重启都会换会话密钥。
 固定下来：

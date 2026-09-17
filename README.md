@@ -1,13 +1,13 @@
 # https_ssl 自签证书管理系统
 
-<div align="center">
-  <img src="./static/images/https_ssl-logo.png" alt="https_ssl Logo" width="150">
-  <p>一款易用的自签证书管理系统</p>
+<div align="center">  
+  <img src="./static/images/https_ssl-logo.png" alt="https_ssl Logo" width="150">  
+  <p>一款易用的自签证书管理系统</p>  
   <img width="1559" height="1615" alt="image" src="https://github.com/user-attachments/assets/620f2eea-6351-4636-985e-2fd8d715b45c" />
-  
-<img width="1358" height="1369" alt="image" src="https://github.com/user-attachments/assets/d62b0fcc-bd11-4ffa-9285-86285eb35d1f" />
 
- <img width="938" height="621" alt="PixPin_2026-09-17_22-34-00" src="https://github.com/user-attachments/assets/b8f2eace-1592-4676-9ca9-90f9d3612e6c" />
+![image](https://github.com/user-attachments/assets/d62b0fcc-bd11-4ffa-9285-86285eb35d1f)
+
+![PixPin\_2026-09-17\_22-34-00](https://github.com/user-attachments/assets/b8f2eace-1592-4676-9ca9-90f9d3612e6c)
 
 </div>
 
@@ -22,26 +22,30 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 ## 主要功能
 
 ### 1. 虚拟机构（CA）管理
+
 - 创建自定义虚拟证书颁发机构（CA）
 - 支持设置 CA 私钥密码保护
 - 查看和下载 CA 证书
 - 管理 CA 证书生命周期
 
 ### 2. 证书申请与管理
+
 - 基于创建的 CA 签发服务器证书
 - 支持多域名和多 IP 地址的 SAN 扩展
 - 证书批量管理和删除
 - 证书和私钥的安全下载
 
-> 证书名称只能包含中英文、数字、下划线、连字符和点，长度 1–64，且不能重名
+> 证书名称只能包含中英文、数字、下划线、连字符和点，长度 1–64，且不能重名  
 > （重名会返回 409，请先删除旧证书）。`ca` 为保留名称。
 
 ### 3. 证书验证
-- 验证已签发证书的有效性：解析证书、校验私钥配对、检查有效期，
+
+- 验证已签发证书的有效性：解析证书、校验私钥配对、检查有效期，  
   再与证书的 SAN 比对所填地址，最后在回环地址完成一次真实 TLS 握手
 - 支持上传自定义证书进行验证（此时按系统信任库校验证书链）
 
 ### 4. 反向代理服务
+
 - 基于已签发证书配置 HTTPS 反向代理
 - 将 HTTP 服务转换为 HTTPS 服务
 - 支持多服务、多站点配置，配置变更热加载
@@ -80,29 +84,56 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 - Docker Engine 20.10+ 与 Docker Compose v2
 - 宿主机**无需**安装 Python / OpenSSL / nginx，它们都在镜像内
 
+> 默认使用 **host 网络模式**，需要 Linux。macOS / Windows 的 Docker Desktop 不支持
+> host 模式，请改用 `docker-compose.bridge.yml`（见下方「反向代理端口」）。
+
 ### 部署步骤
 
 1. 将项目上传到服务器，例如 `/vol1/docker/https_ssl`。
-
 2. 进入目录并启动：
-
    ```bash
    cd /vol1/docker/https_ssl
    docker compose up -d --build
    ```
-
 3. 在浏览器中访问 `http://<服务器IP>:2002`。
-
 4. 使用默认账号登录：
    - 用户名：`admin`
    - 密码：`admin`
-
-   密码在首次启动时用于初始化账号，之后以哈希形式存于容器内 `/app/users.json`，
+   密码在首次启动时用于初始化账号，之后以哈希形式存于容器内 `/app/users.json`，  
    请及时在「设置」页修改。想换成别的初始密码，见下方环境变量表。
 
 ### 反向代理端口
 
-反向代理不需要额外容器。新增一个反代服务后，请在 `docker-compose.yml` 的 `ports` 中把该服务要监听的端口映射出来，例如：
+**它在做什么**：把**别的设备**上的 HTTP 服务，用**本机（跑面板的这台机器）的端口**
+代理成 HTTPS 服务。浏览器访问的是本机地址，TLS 在本机终止，后端服务在哪台机器上都不影响。
+
+**两个地址怎么填**：
+
+| 字段 | 填什么 |
+|---|---|
+| 原本地址 | 后端服务的真实地址，**可以是别的设备**，如 `http://192.168.5.5:5244` |
+| 反代后地址 | **IP 只能填本机**（跑面板的这台机器），如 `https://192.168.5.3:5245` |
+
+原因：HTTPS 是在本机终止的，浏览器敲的也是本机地址，所以证书的 SAN 里必须有本机 IP，
+访问时也只能用本机 IP。
+
+**后端自己就是 HTTPS？** 不用让面板再签一张——「证书类型」选**上传自定义证书**，
+把后端服务自己的证书和私钥传上来即可，原本地址照旧填后端的原 IP 和端口。
+
+**端口怎么放行**：默认就是 host 网络模式，**面板里填端口 → 点启用 → 结束，能访问了**，
+不用改 `docker-compose.yml`，也不用重建容器。
+
+#### 想用 bridge 模式的话
+
+macOS / Windows 的 Docker Desktop 不支持 host 模式；或者你需要容器网络隔离时，
+改用 bridge：
+
+```bash
+docker compose -f docker-compose.bridge.yml up -d --build
+```
+
+代价是**每加一个反向代理端口，都要多两步**：先在 `docker-compose.bridge.yml`
+的 `ports` 里声明，再 `docker compose up -d` 重建容器。
 
 ```yaml
     ports:
@@ -110,7 +141,32 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
       - "14000:14000"    # 某个反向代理服务
 ```
 
-修改后执行 `docker compose up -d` 重建容器即可。之后在面板「反向代理」页面新增服务并点击启用，站点配置由面板自动生成并热加载。
+原因：bridge 模式下端口映射**在容器创建那一刻就写死了**，事后加不进去。
+
+**最容易踩的坑**：面板里填了端口，却没写进 `ports`——容器内部监听是成功的，
+但外面连不上，看起来就像「没生效」。
+
+> 不想每次都改 compose？可以在 `ports` 里**一次性放行一整段端口**
+> （如 `- "15000-15999:15000-15999"`），之后区间内的新端口就不用再重建了。
+
+> 两种模式的完整对比见
+> **[部署说明（Docker）→ 网络模式](./INSTALL.md#网络模式默认-host)**。
+
+#### 新增一个反代：创建和启用是两步
+
+面板里「创建」与「启用」分开，**只做一步都不会监听端口**：
+
+1. 点「新增」填完信息保存 —— 服务记录建好了，但状态是未启用，端口还没开始监听；
+2. 在列表里**把开关打开** —— 这一步才真正生成 nginx 站点并 `nginx -s reload`。
+
+#### 端口怎么选
+
+挑一个宿主机上没被占用的端口。万一撞车，只有这一个站点加载失败  
+（`nginx -t` 会先拦下来，其他已启用服务不受影响），但你这个入口会打不开。先查一下：
+
+```bash
+ss -lntp | grep <端口>     # 有输出就是被占了
+```
 
 ## 使用指南
 
@@ -155,18 +211,19 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 
 支持以下环境变量：
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `QILIN_ADMIN_PASSWORD` | `admin` | 首次启动创建 admin 账号用的初始密码。**只在还没有 `users.json` 时生效**，之后改这个变量不会影响已有账号 |
-| `QILIN_SECRET_KEY` | 随机 | 会话签名密钥。留空时每次启动随机生成，**容器重启会导致所有登录失效**，建议固定 |
-| `QILIN_COOKIE_SECURE` | `0` | 置 1 时会话 Cookie 仅在 HTTPS 下发送（面板经 HTTPS 反代暴露时使用） |
-| `QILIN_PROXY_DIR` | `/app/proxy` | 反向代理站点配置与证书目录 |
-| `QILIN_PROXY_LISTEN_HOST` | 空 | 代理监听地址，留空表示监听全部地址 |
-| `QILIN_OPENSSL` | `/usr/bin/openssl` | OpenSSL 可执行文件路径 |
+| 变量                        | 默认值                | 说明                                                               |
+| ------------------------- | ------------------ | ---------------------------------------------------------------- |
+| `QILIN_ADMIN_PASSWORD`    | `admin`            | 首次启动创建 admin 账号用的初始密码。**只在还没有 `users.json` 时生效**，之后改这个变量不会影响已有账号 |
+| `QILIN_SECRET_KEY`        | 随机                 | 会话签名密钥。留空时每次启动随机生成，**容器重启会导致所有登录失效**，建议固定                        |
+| `QILIN_COOKIE_SECURE`     | `0`                | 置 1 时会话 Cookie 仅在 HTTPS 下发送（面板经 HTTPS 反代暴露时使用）                   |
+| `QILIN_PORT` | `2002` | 面板监听端口。**仅 host 模式（默认）有效**；bridge 模式下容器内固定 2002，改端口要动 compose 的 `ports` |
+| `QILIN_PROXY_DIR`         | `/app/proxy`       | 反向代理站点配置与证书目录                                                    |
+| `QILIN_PROXY_LISTEN_HOST` | 空                  | 代理监听地址，留空表示监听全部地址                                                |
+| `QILIN_OPENSSL`           | `/usr/bin/openssl` | OpenSSL 可执行文件路径                                                  |
 
 ## 自检
 
-`scripts/smoke_test.py` 会在临时目录里完整跑一遍流程（建 CA → 签发 → 验证 →
+`scripts/smoke_test.py` 会在临时目录里完整跑一遍流程（建 CA → 签发 → 验证 →  
 反代创建/启停/删除 → 删除联动），不会读写项目里的真实数据：
 
 ```bash
@@ -187,44 +244,41 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 - 系统生成的 CA 证书和私钥仅用于测试和开发环境
 - 在生产环境中，建议使用正规 CA 机构签发的证书
 - 请妥善保管 CA 私钥，避免泄露
-- CA 私钥不会通过面板分发（`/download/ca/` 只放行根证书 `qilin-ca.crt`），
+- CA 私钥不会通过面板分发（`/download/ca/` 只放行根证书 `qilin-ca.crt`），  
   需要备份请直接从宿主目录 `./data/ca` 取
 - 定期更换用户密码，提高系统安全性
 - 容器内 nginx 与 Flask 以同一用户运行，请勿将该容器暴露到不可信网络
-- 管理员默认账号为 `admin` / `admin`，首次启动时由 `QILIN_ADMIN_PASSWORD` 初始化
+- 管理员默认账号为 `admin` / `admin`，首次启动时由 `QILIN_ADMIN_PASSWORD` 初始化  
   （缺省 `admin`，启动日志会提示改密码）；请尽快在「设置」页更换
 
 ## 常见问题
 
 1. **证书不被浏览器信任怎么办？**
    - 需要将生成的 CA 证书安装到操作系统的受信任根证书存储区
-
 2. **如何在移动设备上信任证书？**
    - 将 CA 证书发送到移动设备并在设备设置中安装证书
-
 3. **反向代理服务无法启动？**
    - 确认所填服务名对应的证书已存在（证书名需与服务名一致）
    - 检查容器内 nginx 配置是否正确：`docker exec qilin_ssl nginx -t`
-   - 检查端口是否已在 `docker-compose.yml` 中映射、以及宿主端口是否被占用：`ss -lntp | grep <端口>`
-
+   - 检查宿主端口是否被别的服务占用：`ss -lntp | grep <端口>`
+   - `bridge` 模式下还要确认该端口已写进 `docker-compose.bridge.yml` 的 `ports`  
+     （`host` 模式没有这条限制）
 4. **修改反向代理端口后不生效？**
-   - 面板保存配置后会自动重载 nginx。若未生效，手动执行：
+   - 面板保存配置后会自动重载 nginx。若未生效，手动执行：  
      `docker exec qilin_ssl nginx -s reload`
-
 5. **创建反向代理后列表里没有 / 提示启动失败？**
-   - 先确认该端口已在 `docker-compose.yml` 的 `ports` 中映射，否则容器内监听成功但宿主访问不到
+   - 「创建」之后还要**点开关启用**才会真正监听端口，只保存不启用是不生效的
+   - `bridge` 模式下确认该端口已写进 `docker-compose.bridge.yml` 的 `ports`，  
+     否则容器内监听成功但宿主访问不到（`host` 模式无此限制）
    - 服务启动失败时面板会直接显示 nginx 的报错原文，按提示处理即可
-
 6. **证书验证提示"证书未覆盖地址"？**
-   - 说明所填 IP/域名不在该证书的 SAN 列表中。请核对申请证书时填写的
+   - 说明所填 IP/域名不在该证书的 SAN 列表中。请核对申请证书时填写的  
      IP 与域名（支持 `*.example.com` 形式的通配）
-
 7. **证书验证提示"证书链校验失败"？**
-   - 自定义证书是按系统信任库校验的：自签证书或缺少中间证书的链都会失败，
+   - 自定义证书是按系统信任库校验的：自签证书或缺少中间证书的链都会失败，  
      浏览器同样会报警告。把 CA 证书装进系统信任库，或换用完整链后再试
-
 8. **重新创建 CA 后原来签发的证书还能用吗？**
-   - 不能。新 CA 无法验证旧证书，面板会自动停用受影响的反向代理服务，
+   - 不能。新 CA 无法验证旧证书，面板会自动停用受影响的反向代理服务，  
      需要重新签发证书后再启用
 
 ## 版本信息
@@ -237,8 +291,8 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 本项目采用 [MIT 许可证](./LICENSE)。
 
-血缘关系：作者源库 [linzxcw/qilin_SSL](https://github.com/linzxcw/qilin_SSL)（原始项目）
-→ [guoxpeng/fnos_qilin_SSL](https://github.com/guoxpeng/fnos_qilin_SSL)（其 fnOS 适配分支）
+血缘关系：作者源库 [linzxcw/qilin\_SSL](https://github.com/linzxcw/qilin_SSL)（原始项目）  
+→ [guoxpeng/fnos\_qilin\_SSL](https://github.com/guoxpeng/fnos_qilin_SSL)（其 fnOS 适配分支）  
 → 本仓库 `https_ssl`（在后者基础上完成 Linux / Docker 适配，反代由 Windows 二进制改为同容器内的 nginx）。
 
 > 注意：原始仓库未附许可证文件。若计划公开发布，建议先联系原作者取得授权。

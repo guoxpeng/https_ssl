@@ -10,10 +10,12 @@
 # 可用环境变量覆盖默认值：
 #   INSTALL_DIR     安装目录，默认 <当前目录>/https_ssl
 #   PANEL_PORT      面板端口，默认 2002
-#   PROXY_PORT      示例反向代理端口，默认 14000（仅桥接模式有效）
-#   NETWORK         bridge（默认）或 host
-#                   host = 用 docker-compose.host.yml，反向代理端口填了即生效，
-#                   不用改 compose 也不用重建容器；仅 Linux 可用。
+#   NETWORK         网络模式，默认 host
+#                     host   = 用默认的 docker-compose.yml。反向代理端口填了即生效，
+#                              不用改 compose 也不用重建容器；仅 Linux 可用。
+#                     bridge = 用 docker-compose.bridge.yml。端口要先在 ports 里声明
+#                              再重建容器；macOS / Windows 的 Docker Desktop 用这个。
+#   PROXY_PORT      示例反向代理端口，默认 14000（仅 bridge 模式有效）
 #   ADMIN_PASSWORD  管理员初始密码，默认 admin
 #   REPO            代码仓库地址
 #   SUDO            留空自动判断；置 1 强制用 sudo，置 0 强制不用
@@ -21,22 +23,24 @@
 # 脚本只做四件事：检查依赖 -> 拉代码 -> 生成 .env -> docker compose up -d --build
 set -euo pipefail
 
+info() { printf '\033[36m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+
 REPO=${REPO:-https://github.com/guoxpeng/https_ssl.git}
 INSTALL_DIR=${INSTALL_DIR:-$PWD/https_ssl}
 PANEL_PORT=${PANEL_PORT:-2002}
 PROXY_PORT=${PROXY_PORT:-14000}
-NETWORK=${NETWORK:-bridge}
+NETWORK=${NETWORK:-host}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
+# host 模式用默认的 docker-compose.yml（命令不带 -f）；bridge 模式用单独的文件。
 case "$NETWORK" in
-    host)   COMPOSE_FILE='docker-compose.host.yml' ;;
-    bridge) COMPOSE_FILE='docker-compose.yml' ;;
-    *)      die "NETWORK 只能是 bridge 或 host，收到：$NETWORK" ;;
+    host)   COMPOSE_FILE='' ;;
+    bridge) COMPOSE_FILE='docker-compose.bridge.yml' ;;
+    *)      die "NETWORK 只能是 host 或 bridge，收到：$NETWORK" ;;
 esac
-
-info() { printf '\033[36m%s\033[0m\n' "$*"; }
-warn() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
-die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+COMPOSE_LABEL=${COMPOSE_FILE:-docker-compose.yml}
 
 # ---------------------------------------------------------------- 1. 依赖检查
 command -v docker >/dev/null 2>&1 || die '未找到 docker，请先安装 Docker Engine 20.10+'
@@ -78,11 +82,14 @@ fi
 
 cd "$INSTALL_DIR"
 
-[ -f "$COMPOSE_FILE" ] || die "仓库里没有 $COMPOSE_FILE，请确认代码完整"
-info "网络模式：$NETWORK（$COMPOSE_FILE）"
+[ -f "$COMPOSE_LABEL" ] || die "仓库里没有 $COMPOSE_LABEL，请确认代码完整"
+info "网络模式：$NETWORK（$COMPOSE_LABEL）"
 
 # 后面所有 compose 命令都带上 -f，打印给用户的命令也保持一致
-DC="$SUDO $COMPOSE -f $COMPOSE_FILE"
+DC="$SUDO $COMPOSE"
+if [ -n "$COMPOSE_FILE" ]; then
+    DC="$DC -f $COMPOSE_FILE"
+fi
 
 # ---------------------------------------------------------------- 3. 生成 .env
 if [ -f .env ]; then
@@ -95,14 +102,15 @@ else
 QILIN_ADMIN_PASSWORD=$ADMIN_PASSWORD
 QILIN_SECRET_KEY=$SECRET
 QILIN_COOKIE_SECURE=0
-# 面板端口。桥接模式下容器内固定 2002（由 compose 写死），这个值不生效；
-# host 模式下没有端口映射，Flask 直接绑这个端口。
+# 面板端口。host 模式（默认）下 Flask 直接绑这个端口；
+# bridge 模式下容器内固定 2002，这个值不生效，改端口要动 compose 的 ports。
 QILIN_PORT=$PANEL_PORT
 EOF
     chmod 600 .env
 fi
 
-# host 模式下没有 ports 段，端口由 nginx 直接绑在宿主机上，改不了也不用改。
+# 只有 bridge 模式需要改 compose 的端口映射：host 模式下没有 ports 段，
+# 端口由 nginx 直接绑在宿主机上，面板端口走 .env 的 QILIN_PORT。
 if [ "$NETWORK" = 'bridge' ]; then
     # 面板端口：改 compose 里的映射，不动其它已配好的端口
     if [ "$PANEL_PORT" != '2002' ]; then
@@ -123,8 +131,10 @@ info '正在构建并启动容器（首次构建需要几分钟）...'
 if ! $DC up -d --build; then
     warn ''
     if [ "$NETWORK" = 'host' ]; then
-        warn '启动失败。host 模式下容器与宿主机共用网络，常见原因是面板端口被占用：'
-        warn "  面板端口 $PANEL_PORT（改 PANEL_PORT 重跑即可，代码和 .env 都不会丢）"
+        warn '启动失败。host 模式下容器与宿主机共用网络，最常见的原因是面板端口被占用：'
+        warn "  面板端口 $PANEL_PORT"
+        warn '换一个端口重跑即可，代码和 .env 都不会丢：'
+        warn "  PANEL_PORT=2010 INSTALL_DIR=$INSTALL_DIR bash install.sh"
     else
         warn '启动失败。最常见的原因是端口已被占用：'
         warn "  面板端口 $PANEL_PORT、示例反代端口 $PROXY_PORT"
@@ -176,16 +186,17 @@ EOF
 
 if [ "$NETWORK" = 'host' ]; then
     cat <<EOF
-    - 当前是 host 网络模式：反向代理端口填了即生效，不用改 compose、也不用重建容器。
+    - 当前是 host 网络模式（默认）：反向代理端口填了即生效，不用改 compose、
+      也不用重建容器。
     - 想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
 
 EOF
 else
     cat <<EOF
-    - 反向代理端口要先在 $COMPOSE_FILE 的 ports 里声明（已预留 $PROXY_PORT），
-      加完执行 $DC up -d 生效。
-    - 嫌每次加端口都要重建容器麻烦，可以改用 host 网络模式：
-      $DC down && $DC -f docker-compose.host.yml up -d --build
+    - 当前是 bridge 网络模式：反向代理端口要先在 $COMPOSE_LABEL 的 ports 里声明
+      （已预留 $PROXY_PORT），加完执行 $DC up -d 生效。
+    - Linux 上建议改用默认的 host 模式，反向代理端口填了即生效：
+      $DC down && $SUDO $COMPOSE up -d --build
     - 想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
 
 EOF

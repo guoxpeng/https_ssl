@@ -47,9 +47,10 @@
         <div class="form-hint warn">
             <strong>新增之前要先放行端口。</strong>
             容器看不到宿主机的端口映射，所以「反代后地址」里的端口必须先在
-            <code>docker-compose.yml</code> 的 <code>ports</code> 里声明，
-            再执行 <code>docker compose up -d</code> 重建容器，否则外部连不上。
-            嫌麻烦可以改用 <code>docker-compose.host.yml</code>（host 网络模式），
+            <code>docker-compose.bridge.yml</code> 的 <code>ports</code> 里声明，
+            再执行 <code>docker compose -f docker-compose.bridge.yml up -d</code>
+            重建容器，否则外部连不上。
+            嫌麻烦可以改用默认的 <code>docker-compose.yml</code>（host 网络模式），
             之后端口就是填了即生效。
             <br>
             「反代后地址」请填<strong>浏览器实际访问的地址</strong>——也就是本机的 IP，
@@ -110,8 +111,9 @@
                     </div>
                     {% else %}
                     <div class="form-hint">
-                        这里的端口要先在 <code>docker-compose.yml</code> 的 <code>ports</code>
-                        里放行，并执行 <code>docker compose up -d</code> 重建容器才对外可用。
+                        这里的端口要先在 <code>docker-compose.bridge.yml</code> 的 <code>ports</code>
+                        里放行，并执行 <code>docker compose -f docker-compose.bridge.yml up -d</code>
+                        重建容器才对外可用。
                         主机名请填本机 IP，不是后端服务所在机器的 IP。
                     </div>
                     {% endif %}

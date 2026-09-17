@@ -2,6 +2,49 @@
 
 本文件记录本项目的所有重要变更。
 
+## [Unreleased]
+
+### 变更（破坏性）
+
+- **默认网络模式改为 `host`**，`bridge` 退为备选。
+
+  在此之前默认是 `bridge`：每加一个反向代理端口，都要改 `docker-compose.yml` 的
+  `ports` 再重建容器。host 模式虽然 v1.4.0 就支持了，但要显式加
+  `-f docker-compose.host.yml` 才能启用。现在反过来 —— `docker-compose.yml` 本身就是
+  host 模式，`docker compose up -d --build` 即可，**面板里新增反代时端口填了即生效**。
+
+  需要保留原来的行为（macOS / Windows 的 Docker Desktop 不支持 host 模式，
+  或者需要容器网络隔离）时，改用新的 `docker-compose.bridge.yml`：
+
+  ```bash
+  docker compose -f docker-compose.bridge.yml up -d --build
+  ```
+
+  - `install.sh` 的 `NETWORK` 默认值同步改为 `host`；`NETWORK=bridge` 时自动切到
+    `docker-compose.bridge.yml`。
+  - `docker-compose.host.yml` 保留为**与默认等价的兼容文件**（内容相同），
+    让已有部署脚本和命令继续可用，将来会移除 —— 新命令直接用默认的
+    `docker-compose.yml`，不用再带 `-f`。
+  - 顺手修掉 `install.sh` 里 `die()` 在定义之前被调用的 bug（`NETWORK` 传错值时
+    报的是「command not found」而不是友好提示）。
+
+  **升级注意**：网络模式变了，建议 `docker compose down` 后再 `up -d --build`，
+  不要直接 `up -d`。
+
+### 文档
+
+- 「反向代理端口」一节补充**功能本身在做什么**：把**别的设备**上的 HTTP 服务，
+  用**本机端口**代理成 HTTPS。并明确两个地址怎么填 —— 原本地址可以指向别的设备，
+  **反代后地址的 IP 只能填本机**（HTTPS 在本机终止，证书 SAN 也要含本机 IP）；
+  后端自己就是 HTTPS 时选「上传自定义证书」，把后端服务的证书和私钥传上来即可，
+  不用重新签发。
+- 文档统一改为「默认 host、bridge 为备选」：README.md / README.en.md 的
+  「反向代理端口」与「Networking: host by default」小节、INSTALL.md 的
+  「网络模式（默认 host）」小节（原「桥接模式 vs host 模式」）、一键安装变量表、
+  「让面板自己也走 HTTPS」与注意事项。
+- 配置项表补充 `QILIN_PORT`（面板端口，仅 host 模式有效）。
+- 修正原文只描述 `bridge` 做法、与代码不一致的问题。
+
 ## [1.4.0] - 2026-09-17
 
 ### 新增
