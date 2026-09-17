@@ -40,16 +40,41 @@
 
 宿主机只需要 **Docker**，不用装 Python、OpenSSL 或 nginx。
 
-### 1. 把代码放到服务器上
+### 一键安装
 
 ```bash
-git clone <你的仓库地址> https_ssl
+curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+```
+
+脚本会依次：检查 Docker / Compose / git → 克隆代码 → 生成带随机会话密钥的 `.env`
+→ 构建并启动容器 → 等待面板就绪 → 打印访问地址。默认装到当前目录下的 `https_ssl`。
+
+想换安装目录或端口：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh \
+  | INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 bash
+```
+
+> 不想把脚本直接喂给 shell 的话，先下载看一眼再执行：
+>
+> ```bash
+> curl -fsSLO https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh
+> less install.sh && bash install.sh
+> ```
+
+### 手动安装
+
+**1. 把代码放到服务器上**
+
+```bash
+git clone https://github.com/guoxpeng/https_ssl.git
 cd https_ssl
 ```
 
 或者直接把项目目录上传到服务器，例如 `/vol1/docker/https_ssl`。
 
-### 2. 启动
+**2. 启动**
 
 ```bash
 docker compose up -d --build
@@ -58,7 +83,7 @@ docker compose up -d --build
 > 飞牛 NAS 等系统上 `admin` 用户不在 docker 组，命令前要加 `sudo`：
 > `sudo docker compose up -d --build`
 
-### 3. 打开面板
+**3. 打开面板**
 
 浏览器访问：
 
@@ -127,23 +152,124 @@ IP 地址：192.168.5.3
 
 保存后点开关启用即可，**不需要重启容器**。
 
-### 让设备信任 CA
+---
 
-先在面板下载根证书 `qilin-ca.crt`，然后：
+## 签发证书后，在电脑上怎么用
 
-**Windows**（PowerShell，需管理员）：
+面板里点完「创建」只是把证书文件生成出来了，电脑真正认它还需要两步：
+**把根证书装进电脑**，**把证书和私钥装到你要保护的服务上**。
 
-```powershell
-.\scripts\trust-ca-windows.ps1 -CaPath .\qilin-ca.crt
+### 1. 把根证书装进电脑
+
+主页「证书下载」里点 `下载CA证书`，得到 `qilin-ca.crt`，然后：
+
+| 系统 | 做法 |
+|---|---|
+| Windows | `.\scripts\trust-ca-windows.ps1 -CaPath .\qilin-ca.crt`（普通权限即可，装进当前用户） |
+| Windows（全机器） | 管理员 PowerShell：`certutil -addstore -f Root .\qilin-ca.crt` |
+| Firefox | 不读 Windows 信任库，需单独处理（见下） |
+| macOS | 双击导入「钥匙串访问」→ 系统 → 该证书 → 显示简介 → 信任 → 始终信任 |
+| Linux | `sudo sh scripts/trust-ca-unix.sh ./qilin-ca.crt` |
+| iOS / Android | 传到设备安装描述文件，再到设置里手动开启「完全信任」 |
+
+Windows 下不加管理员也能装进**当前用户**的受信任根，Chrome / Edge 立刻生效。
+想让全机器生效（系统服务、其他账号），用管理员再跑一次上面的 `certutil`。
+
+**Firefox 有自己的信任库，不读 Windows 存储**，需要单独处理，二选一：
+
+- `about:config` → 把 `security.enterprise_roots.enabled` 设为 `true`，重启浏览器；
+- 或 设置 → 隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入 `qilin-ca.crt`，
+  勾选"信任由此 CA 标识的网站"。
+
+装完之后，凡是这张 CA 签发的证书，浏览器都不再报警告。
+
+> 装完仍提示不安全？先确认访问的地址确实在该证书的 SAN 里
+> （面板「证书验证」页可以直接查），再确认中间没有别的代理换掉了证书。
+
+### 2. 把证书和私钥装到服务上
+
+「证书列表」每行都有两个下载按钮：
+
+- `xxx.crt` —— 服务器证书，含公钥，可以随便给
+- `xxx.key` —— 私钥，**不要外传**，放到服务器上后建议 `chmod 600`
+
+以 nginx 为例：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name nas.lan;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.crt;
+    ssl_certificate_key /etc/nginx/certs/xxx.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+    }
+}
 ```
 
-**Linux / macOS**：
+> **链要拼全**，否则部分客户端会报「证书链不完整」：
+> `cat xxx.crt qilin-ca.crt > fullchain.crt`，`ssl_certificate` 指向 `fullchain.crt`。
+> 用面板的「反向代理」功能则不用管，它会自动拼好。
 
-```bash
-sudo sh scripts/trust-ca-unix.sh ./qilin-ca.crt
-```
+其它服务同理：
 
-**iOS / Android**：把 `qilin-ca.crt` 传到设备上安装，再到系统设置里手动开启"完全信任"。
+- **Node.js**：`https.createServer({ cert, key })`
+- **Python**：`ssl.SSLContext(...).load_cert_chain(cert, key)`
+- **Docker 服务**：把两个文件挂进容器，在应用配置里指过去
+- **群晖 / 飞牛等 NAS**：控制面板里「证书」→ 导入，选这两个文件
+
+私钥必须和证书配对，不放心可以在面板「证书验证」页上传自检。
+
+### 3. 验证
+
+- 浏览器打开 `https://<域名或IP>`，应该是绿锁、没有警告
+- 面板「证书验证」页填地址，它会做一次真实 TLS 握手并给出结果
+- 命令行自查：
+
+  ```bash
+  openssl s_client -connect nas.lan:443 -CAfile qilin-ca.crt </dev/null 2>&1 \
+    | grep 'Verify return code'
+  ```
+
+  输出 `Verify return code: 0 (ok)` 就说明链路正确。
+
+### 4. 懒得手动配？
+
+面板的「反向代理」就是为这个场景准备的：填两个地址、选一张证书，证书链与 nginx
+配置全部自动生成，改完热加载，不用重启容器。
+
+---
+
+## 让面板自己也走 HTTPS
+
+面板默认是明文 HTTP（`http://<服务器IP>:2002`），浏览器会提示"此站点的连接不安全"——
+这是正常的，它就是个 HTTP 页面。注意 `https://<服务器IP>:2002` 是打不开的，
+面板本身不提供 TLS。想让它也变成 HTTPS，用面板自带的反向代理功能就行：
+
+1. 先在 `docker-compose.yml` 的 `ports` 里加一个端口（别和已有反代冲突）：
+
+   ```yaml
+       ports:
+         - "2002:2002"      # 管理面板
+         - "14000:14000"    # 反向代理：nas
+         - "12002:12002"    # 反向代理：面板自身 HTTPS
+   ```
+
+2. `docker compose up -d` 重建容器让端口生效。
+
+3. 面板「反向代理」→ 新增：
+
+   - 服务名称：`panel`
+   - 原本地址：`http://<服务器IP>:2002`
+   - 反代后地址：`https://<服务器IP>:12002`
+   - 证书：选一张 SAN 里包含该 IP 的证书
+
+   保存后点开关启用，之后用 `https://<服务器IP>:12002` 访问面板。
+   原来的 `http://<服务器IP>:2002` 仍然可用，出问题可以退回去。
+
+自签证书浏览器仍会提示"不受信任"，把根证书装进设备（见上一节）才会显示绿锁。
 
 ---
 

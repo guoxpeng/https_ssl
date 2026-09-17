@@ -87,6 +87,30 @@ with far fewer privileges.
 
 ### 1. Get the code onto your server
 
+One-liner — it clones the repo, writes a `.env` with a random session key, builds the
+container, waits for the panel to come up and prints the address:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+```
+
+It installs into `./https_ssl` by default. Override with environment variables:
+
+```bash
+INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 \
+  curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+```
+
+If you prefer to read the script before running it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh
+less install.sh
+bash install.sh
+```
+
+Or do it by hand:
+
 ```bash
 git clone <your-repo-url> https_ssl
 cd https_ssl
@@ -142,10 +166,18 @@ exists, changing `.env` has no effect — use the Settings page instead.
 
 Download `qilin-ca.crt` from the panel, then:
 
-**Windows** (PowerShell, as Administrator):
+**Windows** (PowerShell):
 
 ```powershell
 .\scripts\trust-ca-windows.ps1 -CaPath .\qilin-ca.crt
+```
+
+Running it without elevation installs the CA into the **current user's** trusted roots,
+which is enough for Chrome / Edge. For machine-wide trust (system services, other
+accounts) run this from an elevated shell:
+
+```powershell
+certutil -addstore -f Root .\qilin-ca.crt
 ```
 
 **Linux / macOS**:
@@ -156,6 +188,62 @@ sudo sh scripts/trust-ca-unix.sh ./qilin-ca.crt
 
 **iOS / Android**: transfer `qilin-ca.crt` to the device, install it, then enable
 "full trust" manually in the system settings.
+
+> **Firefox keeps its own trust store and does not read the Windows one.** Either set
+> `security.enterprise_roots.enabled` to `true` in `about:config` and restart, or import
+> the CA manually under Settings → Privacy & Security → Certificates → View Certificates
+> → Authorities and tick "Trust this CA to identify websites".
+
+### Using an issued certificate on a service
+
+Hitting "Create" in the panel only writes the files. To actually put a certificate to
+work you need two things: the **root CA in your device's trust store** (above), and the
+**certificate plus private key on the service you want to protect**.
+
+Every row in the certificate list has two download buttons:
+
+- `xxx.crt` — the server certificate (public key); safe to share
+- `xxx.key` — the private key; **never share it**, and `chmod 600` it on the server
+
+For example, with nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name nas.lan;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.crt;
+    ssl_certificate_key /etc/nginx/certs/xxx.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+    }
+}
+```
+
+> **Concatenate the chain**, otherwise some clients report an incomplete chain:
+> `cat xxx.crt qilin-ca.crt > fullchain.crt` and point `ssl_certificate` at
+> `fullchain.crt`. If you use the panel's reverse proxy feature this is done for you.
+
+Other services follow the same pattern:
+
+- **Node.js**: `https.createServer({ cert, key })`
+- **Python**: `ssl.SSLContext(...).load_cert_chain(cert, key)`
+- **Docker service**: mount both files into the container and point the app config at them
+- **Synology / Feiniu NAS**: Control Panel → Certificate → Import, select the two files
+
+The private key must match the certificate. If in doubt, upload both to the panel's
+Verify page for a self-check.
+
+To confirm everything lines up:
+
+```bash
+openssl s_client -connect nas.lan:443 -CAfile qilin-ca.crt </dev/null 2>&1 \
+  | grep 'Verify return code'
+```
+
+`Verify return code: 0 (ok)` means the chain is correct. A green padlock in the browser
+and a successful run on the panel's Verify page are equally good signs.
 
 ## Configuration
 
@@ -242,6 +330,21 @@ certificate you ever issued becomes invalid**. Keep an offline copy.
 
 4. **"Certificate X does not exist" when toggling a proxy.** The certificate referenced
    by that service was deleted. Edit the service, pick a certificate again and save.
+
+5. **The browser says "connection is not secure".** The panel itself is plain HTTP, so
+   the warning is expected (`https://<server-ip>:2002` will not connect at all — the
+   panel does not speak TLS). To serve the panel over HTTPS too:
+
+   1. add a port in `docker-compose.yml` (e.g. `- "12002:12002"`) and run
+      `docker compose up -d`;
+   2. in the panel's Reverse Proxy page add a service with original address
+      `http://<server-ip>:2002` and new address `https://<server-ip>:12002`, picking a
+      certificate whose SAN covers that IP;
+   3. install the root CA into your device's trust store for a green lock.
+
+   Note that **Firefox keeps its own trust store and does not read the Windows one** —
+   set `security.enterprise_roots.enabled` to `true` in `about:config`, or import the CA
+   manually under Authorities.
 
 ## Self-check
 

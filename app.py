@@ -159,6 +159,18 @@ def _ca_info():
     return _read_json(CA_INFO_FILE) or {}
 
 
+def _pretty_date(text):
+    """把 OpenSSL 的 notBefore/notAfter 原文转成 YYYY-MM-DD。
+
+    面板上直接显示 `Feb 16 08:19:50 2036 GMT` 既长又难读，和 CA 那行的
+    `2036-02-16` 也对不齐。解析不了就原样返回，不吞掉信息。
+    """
+    try:
+        return datetime.datetime.strptime(text, '%b %d %H:%M:%S %Y %Z').strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        return text or ''
+
+
 def _cert_info(cert_path):
     """解析证书的 subject / SAN / 有效期。
 
@@ -199,6 +211,9 @@ def _cert_info(cert_path):
                 info['not_after'], '%b %d %H:%M:%S %Y %Z').timestamp()
         except ValueError:
             pass
+        # 时间戳已经算出来了，展示用的两个字段再转成人能读的日期
+        info['not_after'] = _pretty_date(info['not_after'])
+    info['not_before'] = _pretty_date(info['not_before'])
     return info
 
 

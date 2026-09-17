@@ -12,6 +12,7 @@ Windows 下若 openssl 不在 PATH，可指定：
     set QILIN_OPENSSL=C:\\Program Files\\Git\\usr\\bin\\openssl.exe
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -115,10 +116,20 @@ def run(workdir):
 
     print('\n[6] 证书列表与下载')
     r = client.get('/list_certs', headers={'Accept': 'application/json'})
-    names = [c['name'] for c in r.get_json()['certs']]
+    certs = r.get_json()['certs']
+    names = [c['name'] for c in certs]
     check('JSON 列表含中文名证书', '我的证书' in names, str(names))
+    # 列表里的有效期必须是 YYYY-MM-DD；直接吐 OpenSSL 的
+    # "Feb 16 08:19:50 2036 GMT" 既难读，也和 CA 那行格式不一致。
+    row = next(c for c in certs if c['name'] == '我的证书')
+    check('有效期为 YYYY-MM-DD 格式',
+          re.fullmatch(r'\d{4}-\d{2}-\d{2}', row['valid_until'] or '') is not None,
+          str(row.get('valid_until')))
     r = client.get('/list_certs')
-    check('HTML 列表可渲染', r.status_code == 200 and '我的证书' in r.get_data(as_text=True))
+    html = r.get_data(as_text=True)
+    check('HTML 列表可渲染', r.status_code == 200 and '我的证书' in html)
+    # CA 行与证书行都应是 YYYY-MM-DD，页面上不该再出现 OpenSSL 原始日期
+    check('HTML 列表不吐 OpenSSL 原始日期', 'GMT' not in html)
     with qilin.app.test_request_context():
         quoted = qilin.url_for('download', cert_dir='我的证书', filename='我的证书.crt')
     r = client.get(quoted)
