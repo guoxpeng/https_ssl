@@ -283,7 +283,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 ## 版本信息
 
-当前版本：v1.4.0
+当前版本：v1.5.0
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
