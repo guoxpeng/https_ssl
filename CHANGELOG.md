@@ -22,6 +22,19 @@
 - **文档注明来源**：README 与 INSTALL 中明确 `https://github.com/linzxcw/qilin_SSL`
   为作者源库（原始项目），本仓库是其 Linux / Docker 适配分支。
 - **新增英文说明** `README.en.md`。
+- **新增一键安装脚本** `install.sh`：检查 Docker / Compose / git → 克隆代码 →
+  生成带随机会话密钥的 `.env`（`chmod 600`）→ 构建并启动容器 → 轮询等待面板就绪 →
+  打印访问地址。支持 `INSTALL_DIR` / `PANEL_PORT` / `ADMIN_PASSWORD` / `REPO` 环境变量覆盖，
+  自动判断是否需要 `sudo`。
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+  ```
+
+- **INSTALL.md 新增「签发证书后，在电脑上怎么用」**：签发只是生成文件，真正让电脑认它
+  还需要「把根证书装进电脑」和「把证书与私钥装到服务上」两步。新增内容含装根证书的
+  6 系统对照表、证书与私钥部署到 nginx / Node.js / Python / Docker / NAS 的示例、
+  证书链要拼全（`cat xxx.crt qilin-ca.crt > fullchain.crt`）以及 `openssl s_client` 验证方式。
 - **文档补充两个实际会踩到的坑**：
   - INSTALL.md 新增「让面板自己也走 HTTPS」——用面板自带的反代把 `2002` 套成
     `https://<IP>:12002`，并说明 `https://<IP>:2002` 本身是打不开的（面板不做 TLS）。
@@ -32,6 +45,14 @@
     `scripts/trust-ca-windows.ps1` 同步改为非管理员时导入 `CurrentUser\Root`
     （此前非管理员会直接跳过，等于什么都没做）。
 - `scripts/smoke_test.py` 临时目录前缀与 e2e 证书名同步改名（`https-ssl-*`）。
+
+### 修复
+
+- **证书列表的有效期直接显示 OpenSSL 原始格式**：面板上原本显示
+  `Feb 16 08:19:50 2036 GMT`，既长又难读，和 CA 那行的 `2036-02-16` 也对不齐。
+  新增 `_pretty_date()` 统一转成 `YYYY-MM-DD`，解析不了则原样返回，不吞信息。
+- `scripts/smoke_test.py` 新增 2 条断言（有效期格式、HTML 列表不再出现原始日期），
+  90 → 92 通过 0 失败。
 
 ## [1.3.0] - 2026-09-17
 
