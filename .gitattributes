@@ -1,0 +1,20 @@
+# 统一使用 LF：shell 脚本与 Dockerfile 若带 CRLF，在 Linux 容器里会执行失败。
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+
+# 脚本与配置显式声明
+*.sh text eol=lf
+Dockerfile text eol=lf
+entrypoint.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+
+# 锁文件与依赖清单不参与 diff
+static/css/all.min.css -diff
+static/js/jquery-3.6.0.min.js -diff

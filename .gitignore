@@ -1,0 +1,32 @@
+# 凭据与用户数据
+.env
+users.json
+
+# 证书与私钥（严禁提交）
+ca/
+certs/
+uploads/
+proxy/
+data/
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+
+# 备份文件
+*.bak
+*.bak-*
+
+# 工作区元数据
+.workbuddy-ai/
+
+# 本地构建/打包产物
+dist/
+
+# 本地 WSL 发行版（含完整 Linux 文件系统，内含凭据与私钥，严禁提交）
+.wsl_distro/
+
+# Python
+__pycache__/
+*.pyc

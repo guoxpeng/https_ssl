@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='images/https_ssl-logo.ico') }}">
+    <title>反向代理 - https_ssl 自签证书管理系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/icons.css') }}">
+    <script src="{{ url_for('static', filename='js/jquery-3.6.0.min.js') }}"></script>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header" style="padding-left: 10px;">
+            <img src="/static/images/https_ssl-logo.png" alt="logo" style="width: 50px; height: 50px;">
+            <h2>https_ssl</h2>
+        </div>
+        <ul class="sidebar-menu">
+            <li><a href="/"><i class="icon-home"></i><span>主页</span></a></li>
+            <li><a href="/verify"><i class="icon-certificate"></i><span>证书验证</span></a></li>
+            <li><a href="/proxy" class="active"><i class="icon-exchange"></i><span>反向代理</span></a></li>
+            <li><a href="/tutorial"><i class="icon-book"></i><span>证书教程</span></a></li>
+            <li><a href="/about"><i class="icon-info-circle"></i><span>关于</span></a></li>
+            <li><a href="/settings"><i class="fas fa-cog"></i><span>设置</span></a></li>
+            <li><a href="/logout"><i class="fas fa-sign-out-alt"></i><span>注销</span></a></li>
+        </ul>
+    </div>
+    
+    <div class="main-content">
+        <h1>https_ssl 自签证书管理系统</h1>
+        
+        <div class="section-header">
+            <i class="fas fa-random"></i>
+            <h2>反向代理</h2>
+        </div>
+        
+        <div class="card">
+            <div class="card-actions">
+                <button class="btn btn-success" id="create-proxy-btn">新增</button>
+                <button class="btn btn-danger" id="delete-proxy-btn">删除</button>
+            </div>
+            
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-proxies"></th>
+                            <th>服务名称</th>
+                            <th>原本地址</th>
+                            <th>反代后地址</th>
+                            <th>证书有效期</th>
+                            <th>运行状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="empty-row">
+                            <td colspan="7">暂无反向代理服务，请点击新增按钮添加</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建反向代理的模态窗口 -->
+    <div id="create-proxy-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>新增反向代理</h2>
+            <form id="create-proxy-form">
+                <div class="form-group">
+                    <label for="service_name">服务名称:</label>
+                    <input type="text" id="service_name" name="service_name" placeholder="请输入服务名称" required>
+                </div>
+                <div class="form-group">
+                    <label for="original_url">原本地址:</label>
+                    <input type="text" id="original_url" name="original_url" placeholder="例如: http://localhost:8080" required>
+                </div>
+                <div class="form-group">
+                    <label for="proxy_url">反代后地址:</label>
+                    <input type="text" id="proxy_url" name="proxy_url" placeholder="例如: https://example.com" required>
+                </div>
+                <div class="form-group">
+                    <label>证书类型：</label>
+                    <div class="radio-group" style="display: flex; gap: 20px; font-weight: normal;">
+                        <label class="radio-label" style="display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="cert-type" value="qilin" checked>
+                            选取 https_ssl 申请的证书
+                        </label>
+                        <label class="radio-label" style="display: flex; align-items: center; gap: 5px;">
+                            <input type="radio" name="cert-type" value="custom">
+                            上传自定义证书
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group" id="qilin-cert-select">
+                    <label for="cert-list">选择证书：</label>
+                    <select id="cert-list" class="form-control"></select>
+                </div>
+                <div id="cert-files" class="form-group" style="display: none;">
+                    <div class="file-info">
+                        <span class="file-label">证书文件：</span>
+                        <span id="cert-filename">未选择文件</span>
+                        <input type="file" id="cert-file" style="display: none;" accept=".crt,.pem,.cer">
+                        <button type="button" class="btn btn-primary upload-btn" data-target="cert-file">上传证书</button>
+                    </div>
+                    <div class="file-info">
+                        <span class="file-label">私钥文件：</span>
+                        <span id="key-filename">未选择文件</span>
+                        <input type="file" id="key-file" style="display: none;" accept=".key,.pem">
+                        <button type="button" class="btn btn-primary upload-btn" data-target="key-file">上传私钥</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">创建</button>
+                <button type="button" class="btn btn-secondary cancel-btn">取消</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 删除反向代理的模态窗口 -->
+    <div id="delete-proxy-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>删除反向代理</h2>
+            <p>确定要删除选中的反向代理服务吗？此操作不可恢复。</p>
+            <div class="modal-buttons">
+                <button class="btn btn-danger" id="confirm-delete-proxy-btn">确认删除</button>
+                <button class="btn btn-secondary" id="cancel-delete-proxy-btn">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/cert_picker.js') }}"></script>
+    <script>
+        $(function () {
+            var $tbody = $('.data-table tbody');
+            var $form = $('#create-proxy-form');
+            var $modal = $('#create-proxy-modal');
+
+            function esc(value) {
+                return $('<div>').text(value == null ? '' : value).html();
+            }
+
+            function errorMessage(xhr, fallback) {
+                var body = xhr && xhr.responseJSON;
+                return (body && body.message) ? body.message : fallback;
+            }
+
+            function statusBadge(running) {
+                return running
+                    ? '<span class="status-badge status-running">运行中</span>'
+                    : '<span class="status-badge status-stopped">已停止</span>';
+            }
+
+            function emptyRow() {
+                return '<tr class="empty-row"><td colspan="7">暂无反向代理服务，请点击新增按钮添加</td></tr>';
+            }
+
+            function rowHtml(proxy, running) {
+                return `
+                    <tr data-id="${esc(proxy.id)}"
+                        data-cert-type="${esc(proxy.cert_type || 'custom')}"
+                        data-cert-id="${esc(proxy.cert_id || '')}"
+                        data-cert-filename="${esc(proxy.cert_filename || '')}"
+                        data-key-filename="${esc(proxy.key_filename || '')}"
+                        data-cert-display="${esc(proxy.cert_display || '')}"
+                        data-key-display="${esc(proxy.key_display || '')}">
+                        <td><input type="checkbox" class="proxy-select"></td>
+                        <td>${esc(proxy.service_name)}</td>
+                        <td>${esc(proxy.original_url)}</td>
+                        <td>${esc(proxy.proxy_url)}</td>
+                        <td>${esc(proxy.cert_expiry) || '—'}</td>
+                        <td class="proxy-status">${statusBadge(running)}</td>
+                        <td>
+                            <label class="switch">
+                                <input type="checkbox" class="proxy-toggle" ${running ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                            <button class="btn btn-sm btn-success edit-proxy" title="编辑">编辑</button>
+                            <button class="btn btn-sm btn-primary visit-proxy" title="访问">访问</button>
+                            <button class="btn btn-sm btn-danger delete-single-proxy" title="删除">删除</button>
+                        </td>
+                    </tr>`;
+            }
+
+            /* ---------------- 列表 ---------------- */
+
+            function loadProxyList() {
+                $tbody.html('<tr class="empty-row"><td colspan="7">正在加载…</td></tr>');
+                $.getJSON('/get_proxy_list').done(function (response) {
+                    var proxies = (response && response.proxies) || [];
+                    if (!proxies.length) {
+                        $tbody.html(emptyRow());
+                        return;
+                    }
+                    var checks = proxies.map(function (proxy) {
+                        return $.ajax({ url: '/get_proxy_pid/' + encodeURIComponent(proxy.id) })
+                            .then(
+                                function (status) {
+                                    return { proxy: proxy, running: !!(status && status.success && status.pid) };
+                                },
+                                function () {
+                                    return { proxy: proxy, running: false };
+                                }
+                            );
+                    });
+                    Promise.all(checks).then(function (results) {
+                        results.sort(function (a, b) {
+                            return String(a.proxy.created_at || '').localeCompare(String(b.proxy.created_at || ''));
+                        });
+                        $tbody.html(results.map(function (item) {
+                            return rowHtml(item.proxy, item.running);
+                        }).join(''));
+                    });
+                }).fail(function (xhr) {
+                    $tbody.html('<tr class="empty-row"><td colspan="7">加载失败：' + esc(errorMessage(xhr, '请刷新页面重试')) + '</td></tr>');
+                });
+            }
+
+            /* ---------------- 启停 ---------------- */
+
+            function setRunning(proxyId, on, $row, $toggle) {
+                $.ajax({
+                    url: on ? '/run_proxy' : '/stop_proxy',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ proxy_id: proxyId })
+                }).done(function (response) {
+                    if (!response.success) {
+                        $toggle.prop('checked', !on);
+                        alert((on ? '启动' : '停止') + '失败：' + response.message);
+                        return;
+                    }
+                    $row.attr('data-running', on ? 'true' : 'false');
+                    $row.find('.proxy-status').html(statusBadge(on));
+                    if (response.message) {
+                        alert(response.message);
+                    }
+                }).fail(function (xhr) {
+                    $toggle.prop('checked', !on);
+                    alert((on ? '启动' : '停止') + '失败：' + errorMessage(xhr, '请稍后重试'));
+                });
+            }
+
+            $tbody.on('change', '.proxy-toggle', function () {
+                var $toggle = $(this);
+                var $row = $toggle.closest('tr');
+                setRunning($row.data('id'), $toggle.prop('checked'), $row, $toggle);
+            });
+
+            $tbody.on('click', '.visit-proxy', function () {
+                var url = $(this).closest('tr').find('td:eq(3)').text();
+                if (url) {
+                    window.open(url, '_blank');
+                }
+            });
+
+            /* ---------------- 新增 / 编辑 ---------------- */
+
+            function openCreate() {
+                $form[0].reset();
+                $form.removeData('original-service-name');
+                $modal.find('h2').text('新增反向代理');
+                $form.find('button[type="submit"]').text('创建');
+                $('input[name="cert-type"][value="qilin"]').prop('checked', true);
+                QilinCertPicker.reset();
+                QilinCertPicker.show('qilin');
+                $modal.css('display', 'block');
+            }
+
+            function openEdit($row) {
+                var data = $row.data();
+                $('#service_name').val($row.find('td:eq(1)').text());
+                $('#original_url').val($row.find('td:eq(2)').text());
+                $('#proxy_url').val($row.find('td:eq(3)').text());
+                $form.data('original-service-name', data.id);
+                $modal.find('h2').text('编辑反向代理');
+                $form.find('button[type="submit"]').text('保存');
+                QilinCertPicker.reset();
+                QilinCertPicker.preload({
+                    certType: data.certType || 'qilin',
+                    certId: data.certId || '',
+                    certStored: data.certFilename || '',
+                    keyStored: data.keyFilename || '',
+                    certDisplay: data.certDisplay || '',
+                    keyDisplay: data.keyDisplay || '',
+                    serviceName: data.id || ''
+                });
+                $modal.css('display', 'block');
+            }
+
+            $('#create-proxy-btn').on('click', openCreate);
+            $tbody.on('click', '.edit-proxy', function () {
+                openEdit($(this).closest('tr'));
+            });
+
+            $form.on('submit', function (e) {
+                e.preventDefault();
+                var serviceName = $.trim($('#service_name').val());
+                var originalUrl = $.trim($('#original_url').val());
+                var proxyUrl = $.trim($('#proxy_url').val());
+                var certType = $('input[name="cert-type"]:checked').val();
+                if (!serviceName || !originalUrl || !proxyUrl) {
+                    alert('请填写服务名称、原本地址和反代后地址');
+                    return;
+                }
+
+                var formData = new FormData();
+                formData.append('service_name', serviceName);
+                formData.append('original_url', originalUrl);
+                formData.append('proxy_url', proxyUrl);
+                formData.append('cert_type', certType);
+                var editing = !!$form.data('original-service-name');
+                if (editing) {
+                    formData.append('original_service_name', $form.data('original-service-name'));
+                }
+
+                if (certType === 'qilin') {
+                    var certId = QilinCertPicker.selectedCertId();
+                    if (!certId) {
+                        alert('请选择证书');
+                        return;
+                    }
+                    formData.append('cert_id', certId);
+                } else {
+                    if (!QilinCertPicker.validateCustom()) {
+                        return;
+                    }
+                    var uploaded = QilinCertPicker.uploaded();
+                    formData.append('cert_filename', uploaded.cert.stored);
+                    formData.append('key_filename', uploaded.key.stored);
+                    formData.append('cert_display', uploaded.cert.original);
+                    formData.append('key_display', uploaded.key.original);
+                }
+
+                var $submit = $form.find('button[type="submit"]').prop('disabled', true);
+                $.ajax({
+                    url: '/create_proxy', type: 'POST', data: formData,
+                    processData: false, contentType: false
+                }).done(function (response) {
+                    if (!response.success) {
+                        alert('保存失败：' + response.message);
+                        return;
+                    }
+                    $modal.css('display', 'none');
+                    if (response.message) {
+                        alert(response.message);
+                    }
+                    var running = !!(response.proxy && response.proxy.status === 'on');
+                    if (!editing && !running) {
+                        // 新增的服务直接启用，省去再点一次开关
+                        $.ajax({
+                            url: '/run_proxy', type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ proxy_id: response.proxy_id })
+                        }).done(function (result) {
+                            if (!result.success) {
+                                alert('服务已保存，但启动失败：' + result.message);
+                            } else if (result.message) {
+                                alert(result.message);
+                            }
+                        }).fail(function (xhr) {
+                            alert('服务已保存，但启动失败：' + errorMessage(xhr, '请稍后重试'));
+                        }).always(loadProxyList);
+                    } else {
+                        loadProxyList();
+                    }
+                }).fail(function (xhr) {
+                    alert('保存失败：' + errorMessage(xhr, '请稍后重试'));
+                }).always(function () {
+                    $submit.prop('disabled', false);
+                });
+            });
+
+            /* ---------------- 删除 ---------------- */
+
+            function askDelete(ids) {
+                if (!ids.length) {
+                    alert('请选择要删除的代理服务');
+                    return;
+                }
+                $('#delete-proxy-modal p').text(ids.length === 1
+                    ? '确定要删除代理服务「' + ids[0] + '」吗？此操作不可恢复。'
+                    : '确定要删除选中的 ' + ids.length + ' 个代理服务吗？此操作不可恢复。');
+                $('#delete-proxy-modal').data('ids', ids).css('display', 'block');
+            }
+
+            $('#delete-proxy-btn').on('click', function () {
+                askDelete($tbody.find('.proxy-select:checked').closest('tr').map(function () {
+                    return $(this).data('id');
+                }).get());
+            });
+
+            $tbody.on('click', '.delete-single-proxy', function () {
+                askDelete([$(this).closest('tr').data('id')]);
+            });
+
+            $('#confirm-delete-proxy-btn').on('click', function () {
+                var ids = $('#delete-proxy-modal').data('ids') || [];
+                $.ajax({
+                    url: '/delete_proxy', type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ proxy_ids: ids })
+                }).done(function (response) {
+                    if (!response.success) {
+                        alert('删除失败：' + response.message);
+                        return;
+                    }
+                    $('#delete-proxy-modal').css('display', 'none');
+                    loadProxyList();
+                }).fail(function (xhr) {
+                    alert('删除失败：' + errorMessage(xhr, '请稍后重试'));
+                });
+            });
+
+            /* ---------------- 表格与弹窗 ---------------- */
+
+            $('#select-all-proxies').on('change', function () {
+                $tbody.find('.proxy-select').prop('checked', $(this).prop('checked'));
+            });
+
+            $tbody.on('change', '.proxy-select', function () {
+                var total = $tbody.find('.proxy-select').length;
+                var checked = $tbody.find('.proxy-select:checked').length;
+                $('#select-all-proxies').prop('checked', total > 0 && total === checked);
+            });
+
+            $(document).on('click', '.modal .close, .modal .cancel-btn, #cancel-delete-proxy-btn', function () {
+                $(this).closest('.modal').css('display', 'none');
+            });
+
+            $(window).on('click', function (event) {
+                if ($(event.target).is('.modal')) {
+                    $('.modal').css('display', 'none');
+                }
+            });
+
+            QilinCertPicker.init();
+            loadProxyList();
+        });
+    </script>
+
+    <style>
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-running {
+            background-color: #28a745;
+            color: white;
+        }
+        .status-stopped {
+            background-color: #dc3545;
+            color: white;
+        }
+    </style>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# 仅需 Flask（werkzeug 随 Flask 一起安装，这里限定大版本避免被拉到不兼容版本）
+flask>=3.0,<4
+werkzeug>=3.0,<4

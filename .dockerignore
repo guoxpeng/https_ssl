@@ -1,0 +1,36 @@
+# 构建上下文排除清单。
+# Dockerfile 使用 COPY . .，没有这个文件时凭据、私钥和本地运行数据
+# 会被打进镜像层：即便运行时用 volume 遮蔽，镜像一旦分发仍等于泄露私钥。
+
+# 凭据与用户数据
+.env
+users.json
+
+# 证书与私钥（CA 私钥、签发的证书、反向代理使用的证书）
+ca/
+certs/
+uploads/
+proxy/
+data/
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+
+# 备份文件与历史副本
+*.bak
+templates/*.bak
+
+# 本地开发/构建残留，容器内不需要
+.wsl_distro/
+dist/
+.workbuddy-ai/
+
+# 版本控制元数据
+.git/
+.gitignore
+
+# Python 产物
+__pycache__/
+*.pyc
