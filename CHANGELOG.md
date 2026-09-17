@@ -2,6 +2,32 @@
 
 本文件记录本项目的所有重要变更。
 
+## [1.3.2] - 2026-09-17
+
+在真机上实测一键安装脚本时发现的问题，一并修掉。
+
+### 修复
+
+- **`install.sh` 在 14000 端口被占用时启动失败，且提示无指导**：仓库的
+  `docker-compose.yml` 里 `14000:14000` 只是个示例反代端口，同一台机器上装第二个
+  实例、或该端口已被别的服务占用时，`docker compose up` 会以
+  `Bind for 0.0.0.0:14000 failed: port is already allocated` 退出。
+  现在新增 `PROXY_PORT` 环境变量（默认 `14000`）可改写该映射，并且启动失败时会
+  明确提示是端口冲突、打印换端口重跑的命令，同时说明代码与 `.env` 不会丢。
+
+### 文档
+
+- INSTALL.md / README.en.md 补上 `install.sh` 全部环境变量表（`INSTALL_DIR`、
+  `PANEL_PORT`、`PROXY_PORT`、`ADMIN_PASSWORD`、`REPO`、`SUDO`）。
+- 补充说明 **`curl | bash` 时 sudo 无法弹密码提示**（stdin 被脚本占用）：
+  账号不在 `docker` 组时需先 `sudo -v`，或改用 `curl ... | sudo bash`。
+
+### 实测记录
+
+在飞牛 NAS（`192.168.5.3`）上真机跑通：克隆 → 生成 `.env`（随机会话密钥、
+`chmod 600`）→ 改写端口 → 构建镜像 → 启动容器 → 等待就绪 → 打印地址，
+`admin/admin` 登录返回 302、鉴权后首页 200，`data/` 目录独立。
+
 ## [1.3.1] - 2026-09-17
 
 ### 变更

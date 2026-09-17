@@ -56,12 +56,29 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
   | INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 bash
 ```
 
+可用的环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `INSTALL_DIR` | `<当前目录>/https_ssl` | 安装目录 |
+| `PANEL_PORT` | `2002` | 面板端口 |
+| `PROXY_PORT` | `14000` | 示例反向代理端口。同一台机器上装第二个实例、或 14000 已被占用时改掉它 |
+| `ADMIN_PASSWORD` | `admin` | 管理员初始密码，登录后请到「设置」页修改 |
+| `REPO` | 本仓库 | 代码仓库地址 |
+| `SUDO` | 自动判断 | 置 `1` 强制用 sudo，置 `0` 强制不用 |
+
+> 端口被占用时脚本会明确提示，并给出换端口重跑的命令——代码和 `.env` 都不会丢。
+
 > 不想把脚本直接喂给 shell 的话，先下载看一眼再执行：
 >
 > ```bash
 > curl -fsSLO https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh
 > less install.sh && bash install.sh
 > ```
+
+> **`curl | bash` 时 sudo 无法弹密码提示**（stdin 被脚本占用）。如果你的账号不在
+> `docker` 组（飞牛 NAS 的 `admin` 就是这种），先 `sudo -v` 缓存一次凭据，
+> 或者用 `curl -fsSL <地址> | sudo bash` 直接以 root 执行。
 
 ### 手动安装
 

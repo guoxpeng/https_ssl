@@ -96,10 +96,26 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 
 It installs into `./https_ssl` by default. Override with environment variables:
 
+| Variable | Default | Purpose |
+|---|---|---|
+| `INSTALL_DIR` | `<cwd>/https_ssl` | Where to install |
+| `PANEL_PORT` | `2002` | Panel port |
+| `PROXY_PORT` | `14000` | Example reverse-proxy port. Change it when running a second instance or when 14000 is taken |
+| `ADMIN_PASSWORD` | `admin` | Initial admin password — change it in Settings after logging in |
+| `REPO` | this repo | Source repository |
+| `SUDO` | auto | `1` forces sudo, `0` forbids it |
+
 ```bash
 INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 \
   curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
 ```
+
+> If a port is already taken the script says so and prints the command to re-run with
+> different ports — your code and `.env` are left untouched.
+
+> **`curl | bash` means sudo cannot prompt for a password** (stdin is the script itself).
+> If your account is not in the `docker` group (the `admin` user on Feiniu NAS is not),
+> run `sudo -v` once beforehand, or use `curl -fsSL <url> | sudo bash`.
 
 If you prefer to read the script before running it:
 

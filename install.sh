@@ -10,6 +10,7 @@
 # 可用环境变量覆盖默认值：
 #   INSTALL_DIR     安装目录，默认 <当前目录>/https_ssl
 #   PANEL_PORT      面板端口，默认 2002
+#   PROXY_PORT      示例反向代理端口，默认 14000
 #   ADMIN_PASSWORD  管理员初始密码，默认 admin
 #   REPO            代码仓库地址
 #   SUDO            留空自动判断；置 1 强制用 sudo，置 0 强制不用
@@ -20,6 +21,7 @@ set -euo pipefail
 REPO=${REPO:-https://github.com/guoxpeng/https_ssl.git}
 INSTALL_DIR=${INSTALL_DIR:-$PWD/https_ssl}
 PANEL_PORT=${PANEL_PORT:-2002}
+PROXY_PORT=${PROXY_PORT:-14000}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
 info() { printf '\033[36m%s\033[0m\n' "$*"; }
@@ -87,9 +89,25 @@ if [ "$PANEL_PORT" != '2002' ]; then
     sed -i "s|\"2002:2002\"|\"$PANEL_PORT:2002\"|" docker-compose.yml
 fi
 
+# 示例反向代理端口同理。仓库自带的 14000 只是个占位示例，
+# 同一台机器上装第二个实例、或 14000 已被别的服务占用时会撞车。
+if [ "$PROXY_PORT" != '14000' ]; then
+    info "示例反代端口改为 $PROXY_PORT"
+    sed -i "s|\"14000:14000\"|\"$PROXY_PORT:14000\"|" docker-compose.yml
+fi
+
 # ---------------------------------------------------------------- 4. 启动
 info '正在构建并启动容器（首次构建需要几分钟）...'
-$SUDO $COMPOSE up -d --build
+if ! $SUDO $COMPOSE up -d --build; then
+    warn ''
+    warn '启动失败。最常见的原因是端口已被占用：'
+    warn "  面板端口 $PANEL_PORT、示例反代端口 $PROXY_PORT"
+    warn '换一组端口重跑即可，代码和 .env 都不会丢：'
+    warn "  PANEL_PORT=2010 PROXY_PORT=14010 INSTALL_DIR=$INSTALL_DIR bash install.sh"
+    warn ''
+    warn "也可以先看日志：cd $INSTALL_DIR && $SUDO $COMPOSE logs"
+    exit 1
+fi
 
 info '等待服务就绪...'
 for _ in $(seq 1 30); do
@@ -126,6 +144,9 @@ cat <<EOF
     $SUDO $COMPOSE logs -f     # 日志
     $SUDO $COMPOSE down        # 停止
 
-  提示：想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
+  提示：
+    - 反向代理端口要在 docker-compose.yml 的 ports 里先声明（已预留 $PROXY_PORT），
+      加完执行 $SUDO $COMPOSE up -d 生效。
+    - 想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
 
 EOF
