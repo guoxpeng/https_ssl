@@ -46,8 +46,11 @@
 curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
 ```
 
-脚本会依次：检查 Docker / Compose / git → 克隆代码 → 生成带随机会话密钥的 `.env`
-→ 构建并启动容器 → 等待面板就绪 → 打印访问地址。默认装到当前目录下的 `https_ssl`。
+脚本会依次：检查 Docker / Compose → 拉取 Docker Hub 上的镜像 → 生成带随机会话密钥的
+`.env` → 启动容器 → 等待面板就绪 → 打印访问地址。默认装到当前目录下的 `https_ssl`。
+
+镜像地址是 `nameguoguo/https_ssl`，同时支持 amd64 与 arm64，**不需要 git、不编译，几十秒装完**。
+国内直连 Docker Hub 经常超时，用 `IMAGE` 换镜像加速站，或 `IMAGE=build` 改回从源码构建。
 
 想换安装目录或端口：
 
@@ -60,6 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
+| `IMAGE` | `nameguoguo/https_ssl:latest` | 镜像地址。换成加速站地址即可走国内镜像；置为 `build` 则改为克隆仓库、从源码构建（需要 git，耗时几分钟） |
 | `INSTALL_DIR` | `<当前目录>/https_ssl` | 安装目录 |
 | `PANEL_PORT` | `2002` | 面板端口 |
 | `NETWORK` | `host` | `host`（默认）或 `bridge`。**`host` 模式下面板里新增反代时端口填了即生效**，不用改 compose 也不用重建容器；`bridge` 用 `docker-compose.bridge.yml`，端口要先写进 `ports` 再重建容器 |
@@ -112,7 +116,7 @@ NETWORK=bridge INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
 # 已经装好的，换成 bridge
 cd /vol1/docker/https_ssl
 sudo docker compose down
-sudo docker compose -f docker-compose.bridge.yml up -d --build
+sudo docker compose -f docker-compose.bridge.yml up -d
 ```
 
 > `bridge` 模式下 `PANEL_PORT` / `PROXY_PORT` 通过 compose 的 `ports` 映射生效；
@@ -135,23 +139,45 @@ sudo docker compose -f docker-compose.bridge.yml up -d --build
 
 ### 手动安装
 
-**1. 把代码放到服务器上**
+**1. 拿到部署文件**
+
+方式 A —— 直接用 Docker Hub 镜像（推荐，不需要 git）：
+
+```bash
+mkdir https_ssl && cd https_ssl
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/guoxpeng/https_ssl/main/docker-compose.yml
+```
+
+方式 B —— 从源码构建：
 
 ```bash
 git clone https://github.com/guoxpeng/https_ssl.git
 cd https_ssl
 ```
 
-或者直接把项目目录上传到服务器，例如 `/vol1/docker/https_ssl`。
+也可以直接把项目目录上传到服务器，例如 `/vol1/docker/https_ssl`。
 
 **2. 启动**
 
+方式 A：
+
 ```bash
-docker compose up -d --build
+docker compose up -d
+```
+
+方式 B：
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
 ```
 
 > 飞牛 NAS 等系统上 `admin` 用户不在 docker 组，命令前要加 `sudo`：
-> `sudo docker compose up -d --build`
+> `sudo docker compose up -d`
+
+> 升级到新版本：方式 A 执行 `docker compose pull && docker compose up -d`；
+> 方式 B 执行 `git pull && docker compose -f docker-compose.build.yml up -d --build`。
+> 用户表默认落在挂载出来的 `./data/users.json`，升级不会丢密码。
 
 **3. 打开面板**
 
@@ -381,8 +407,11 @@ docker compose logs -f
 docker compose restart
 docker compose down
 
-# 升级（改了代码之后）
-docker compose up -d --build
+# 升级（用 Docker Hub 镜像）
+docker compose pull && docker compose up -d
+
+# 升级（从源码构建的，先 git pull）
+docker compose -f docker-compose.build.yml up -d --build
 
 # 体检：对真实数据跑一遍关键接口
 docker cp scripts/verify_deploy.py qilin_ssl:/tmp/
@@ -409,16 +438,19 @@ tar czf https_ssl_backup.tar.gz data .env
 **1. 不要暴露到公网。** 面板用的是 Flask 开发服务器，只适合内网使用。
 确需对外，请在前面再套一层 HTTPS 反代。
 
-**2. 重建容器后密码可能被重置。** 账号文件 `users.json` 在容器内部，不在挂载目录里。
-`docker compose up -d --build` 重建容器后会按 `.env` 的初始密码重新创建账号——
-**你在面板里改过的密码会丢**。升级前先备份、重建后拷回去：
+**2. 用户表在哪，决定重建容器会不会丢密码。** 账号文件默认在容器内
+`/app/users.json`，**重建容器会按 `.env` 的初始密码重新创建账号**。
+仓库自带的 compose 文件已经把 `QILIN_USERS_FILE` 指向挂载出来的
+`/app/data/users.json`，用它们部署时升级、重建都不会丢密码。
+
+如果你用的是自己写的 compose 或 `docker run`，没设这个变量，升级前先备份：
 
 ```bash
-docker cp qilin_ssl:/app/users.json ./data/users.json.bak     # 升级前
-# ...执行 docker compose up -d --build...
-docker cp ./data/users.json.bak qilin_ssl:/app/users.json
+docker cp qilin_ssl:/app/users.json ./users.json.bak     # 升级前
+# ...重建容器...
+docker cp ./users.json.bak qilin_ssl:/app/users.json
 docker exec qilin_ssl chmod 600 /app/users.json
-docker restart qilin_ssl
+docker restart qilin_ssl     # USERS 在启动时读入，只 cp 不重启不生效
 ```
 
 **3. 反代端口要先声明（仅 `bridge` 模式）。** `bridge` 模式下新加的反代端口没写进

@@ -1,9 +1,14 @@
-# 兼容文件 —— 内容与默认的 docker-compose.yml 完全一致，保留它只是为了让
-# 已有的部署脚本和命令（docker compose -f docker-compose.host.yml ...）继续可用。
+# 兼容文件 —— 保留它只是为了让已有的部署脚本和命令
+# （docker compose -f docker-compose.host.yml ...）继续可用。
 #
 # v1.4.0 时 host 模式还是可选项，必须显式指定这个文件才能启用；
 # 现在 host 已经是默认，直接 docker compose up -d 即可。本文件将来会移除，
 # 新写的命令请不要再引用它。
+#
+# ⚠️ 本文件刻意保持「从源码构建」且不设 QILIN_USERS_FILE ——
+#    某些已有部署（容器内 /app/users.json）依赖这个行为，改动会破坏它们的
+#    用户表备份/还原流程。新部署请用 docker-compose.yml 或
+#    docker-compose.build.yml，那两个会把用户表落到数据卷里。
 #
 # 说明：host 网络模式下容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口，
 #       面板里新增反向代理时端口填了即生效，不用改 compose、也不用重建容器。

@@ -1,0 +1,81 @@
+name: 构建并推送镜像到 Docker Hub
+
+# 触发方式：
+#   1. 推送到 main      -> 打 main / latest 标签
+#   2. 推送 v* 标签     -> 打 1.6.0 / 1.6 / 1 / latest 等语义化版本标签
+#   3. 手动触发         -> 同上，按当前分支决定
+#
+# 需要仓库里配置两个 Secrets（Settings -> Secrets and variables -> Actions）：
+#   DOCKERHUB_USERNAME  Docker Hub 用户名
+#   DOCKERHUB_TOKEN     Docker Hub 访问令牌（Access Token，不是登录密码）
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+# 同一分支/标签的多次触发只保留最新一次，避免排队
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: nameguoguo/https_ssl
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # arm64 靠 QEMU 模拟构建，群晖 / 树莓派等 ARM 设备可以直接拉
+      - name: 准备 QEMU 与 Buildx
+        uses: docker/setup-qemu-action@v3
+
+      - name: 准备 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 计算标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 关掉 provenance 证明：它会让镜像变成带 attestation 的 OCI index，
+          # 群晖 / 群晖系 NAS 上较老的 docker 拉取时会报 unknown manifest。
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 把仓库里的 DOCKERHUB.md 同步成 Docker Hub 上的仓库说明
+      - name: 同步 Docker Hub 仓库说明
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE_NAME }}
+          readme-filepath: ./DOCKERHUB.md
+          short-description: 自签证书管理面板：创建 CA、签发证书、把局域网 HTTP 服务反向代理成 HTTPS

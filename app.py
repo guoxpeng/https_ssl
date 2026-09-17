@@ -64,6 +64,11 @@ CA_KEY = os.path.join(CA_DIR, 'qilin-ca.key')
 CA_CRT = os.path.join(CA_DIR, 'qilin-ca.crt')
 CA_INFO_FILE = os.path.join(CA_DIR, 'ca_info.json')
 
+# 用户表位置。默认放在代码目录下（历史行为，不改动既有部署）；
+# 用 compose 部署时指向挂载出来的数据卷，重建容器才不会把改过的密码冲掉。
+USERS_FILE = os.path.abspath(
+    os.environ.get('QILIN_USERS_FILE') or os.path.join(BASE_DIR, 'users.json'))
+
 app.config.update(
     SECRET_KEY=os.environ.get('QILIN_SECRET_KEY') or os.urandom(24),
     SESSION_COOKIE_HTTPONLY=True,
@@ -76,7 +81,8 @@ app.config.update(
 if not os.environ.get('QILIN_SECRET_KEY'):
     print('[warn] 未设置 QILIN_SECRET_KEY，本次使用随机密钥；容器重启后所有登录会话失效。', flush=True)
 
-for _d in (CA_DIR, CERTS_DIR, UPLOAD_DIR, PROXY_SITES_DIR, PROXY_CERTS_DIR):
+for _d in (CA_DIR, CERTS_DIR, UPLOAD_DIR, PROXY_SITES_DIR, PROXY_CERTS_DIR,
+           os.path.dirname(USERS_FILE)):
     os.makedirs(_d, exist_ok=True)
 if not os.path.exists(PROXY_DATA_FILE):
     with open(PROXY_DATA_FILE, 'w', encoding='utf-8') as _f:
@@ -365,7 +371,7 @@ def load_users():
     只在「还没有 users.json」时生效——一旦账号建立，改这个环境变量不再影响密码，
     改密码请走面板的「设置」页。
     """
-    users_file = os.path.join(BASE_DIR, 'users.json')
+    users_file = USERS_FILE
     users = _read_json(users_file)
     if users:
         return users
@@ -379,7 +385,7 @@ def load_users():
 
 
 def save_users(users):
-    users_file = os.path.join(BASE_DIR, 'users.json')
+    users_file = USERS_FILE
     fd = os.open(users_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         json.dump(users, f, ensure_ascii=False, indent=4)

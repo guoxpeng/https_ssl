@@ -11,7 +11,7 @@
 
 </div>
 
-[English](./README.en.md) · [部署说明（Docker）](./INSTALL.md)
+[English](./README.en.md) · [部署说明（Docker）](./INSTALL.md) · [Docker Hub](https://hub.docker.com/r/nameguoguo/https_ssl)
 
 ## 项目介绍
 
@@ -84,23 +84,52 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 - Docker Engine 20.10+ 与 Docker Compose v2
 - 宿主机**无需**安装 Python / OpenSSL / nginx，它们都在镜像内
 
+> 镜像已发布到 Docker Hub：`nameguoguo/https_ssl`（同时支持 amd64 / arm64），
+> 可以不克隆代码直接拉取运行。
+>
 > 默认使用 **host 网络模式**，需要 Linux。macOS / Windows 的 Docker Desktop 不支持
 > host 模式，请改用 `docker-compose.bridge.yml`（见下方「反向代理端口」）。
 
 ### 部署步骤
 
-1. 将项目上传到服务器，例如 `/vol1/docker/https_ssl`。
-2. 进入目录并启动：
-   ```bash
-   cd /vol1/docker/https_ssl
-   docker compose up -d --build
-   ```
-3. 在浏览器中访问 `http://<服务器IP>:2002`。
-4. 使用默认账号登录：
-   - 用户名：`admin`
-   - 密码：`admin`
-   密码在首次启动时用于初始化账号，之后以哈希形式存于容器内 `/app/users.json`，  
-   请及时在「设置」页修改。想换成别的初始密码，见下方环境变量表。
+**方式一：一键脚本（推荐）**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+```
+
+脚本会拉取 Docker Hub 上的镜像并启动，不需要 git、不编译，几十秒装完。
+
+**方式二：直接用 Docker Hub 镜像**
+
+```bash
+mkdir https_ssl && cd https_ssl
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/guoxpeng/https_ssl/main/docker-compose.yml
+docker compose up -d
+```
+
+国内直连 Docker Hub 经常超时，可以在 `.env` 里写 `QILIN_IMAGE=<加速站>/nameguoguo/https_ssl:latest`
+换用镜像加速站，或改用方式三从源码构建。
+
+**方式三：从源码构建**
+
+```bash
+git clone https://github.com/guoxpeng/https_ssl.git
+cd https_ssl
+docker compose -f docker-compose.build.yml up -d --build
+```
+
+然后浏览器访问 `http://<服务器IP>:2002`，用下面的账号登录：
+
+- 用户名：`admin`
+- 密码：`admin`
+
+密码在首次启动时用于初始化账号，之后以哈希形式存于用户表（见 `QILIN_USERS_FILE`），
+请及时在「设置」页修改。想换成别的初始密码，见下方环境变量表。
+
+> 升级到新版本：`docker compose pull && docker compose up -d`。
+> 用户表默认落在挂载出来的 `./data/users.json`，升级不会丢密码。
 
 ### 反向代理端口
 
@@ -129,7 +158,7 @@ macOS / Windows 的 Docker Desktop 不支持 host 模式；或者你需要容器
 改用 bridge：
 
 ```bash
-docker compose -f docker-compose.bridge.yml up -d --build
+docker compose -f docker-compose.bridge.yml up -d
 ```
 
 代价是**每加一个反向代理端口，都要多两步**：先在 `docker-compose.bridge.yml`
@@ -217,6 +246,8 @@ ss -lntp | grep <端口>     # 有输出就是被占了
 | `QILIN_SECRET_KEY`        | 随机                 | 会话签名密钥。留空时每次启动随机生成，**容器重启会导致所有登录失效**，建议固定                        |
 | `QILIN_COOKIE_SECURE`     | `0`                | 置 1 时会话 Cookie 仅在 HTTPS 下发送（面板经 HTTPS 反代暴露时使用）                   |
 | `QILIN_PORT` | `2002` | 面板监听端口。**仅 host 模式（默认）有效**；bridge 模式下容器内固定 2002，改端口要动 compose 的 `ports` |
+| `QILIN_USERS_FILE`       | `/app/users.json`  | 用户表位置。默认在容器内，**重建容器会丢**；compose 部署时指向挂载出来的 `/app/data/users.json` |
+| `TZ`                     | `UTC`              | 容器时区。证书有效期等时间戳按它显示，国内建议 `Asia/Shanghai` |
 | `QILIN_PROXY_DIR`         | `/app/proxy`       | 反向代理站点配置与证书目录                                                    |
 | `QILIN_PROXY_LISTEN_HOST` | 空                  | 代理监听地址，留空表示监听全部地址                                                |
 | `QILIN_OPENSSL`           | `/usr/bin/openssl` | OpenSSL 可执行文件路径                                                  |
@@ -283,7 +314,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 ## 版本信息
 
-当前版本：v1.5.0
+当前版本：v1.6.0
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 

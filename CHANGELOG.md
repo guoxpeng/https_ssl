@@ -2,6 +2,60 @@
 
 本文件记录本项目的所有重要变更。
 
+## [1.6.0] - 2026-09-18
+
+### 新增
+
+- **镜像发布到 Docker Hub**：[`nameguoguo/https_ssl`](https://hub.docker.com/r/nameguoguo/https_ssl)，
+  同时提供 `linux/amd64` 与 `linux/arm64`。
+
+  以前装这个面板要先 `git clone` 再本地构建，首次构建要几分钟。现在直接拉镜像：
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
+  ```
+
+  `install.sh` 默认改为**拉镜像安装**，不再需要 `git`；想自己改代码时用
+  `IMAGE=build` 回退到「克隆 + 构建」的老流程。国内直连 Docker Hub 超时时，
+  用 `IMAGE=<加速站>/nameguoguo/https_ssl:latest` 换镜像源。
+
+- **GitHub Actions 自动构建**：`.github/workflows/docker-publish.yml`。
+  推送到 `main` 打 `main` / `latest`；推 `v*` 标签额外打 `1.6.0` / `1.6` / `1`。
+  构建完顺带把 `DOCKERHUB.md` 同步到 Docker Hub 的仓库说明页。
+  需要在仓库里配置 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN` 两个 Secret。
+
+- **Docker Hub 说明页**：新增 `DOCKERHUB.md`，顶部突出 GitHub 仓库地址与 Star 引导。
+
+### 变更
+
+- **用户表（`users.json`）支持挪出容器**：新增环境变量 `QILIN_USERS_FILE`，
+  默认值不变（容器内 `/app/users.json`）。仓库的 compose 文件改为指向挂载出来的
+  `/app/data/users.json`，**重建容器不再丢密码**。
+  `docker-compose.host.yml` 刻意**不设**这个变量，避免影响已有部署的备份 / 还原流程。
+
+- **容器时区可配**：镜像内置 `tzdata`，默认 `TZ=Asia/Shanghai`。
+  在此之前容器是 UTC，证书有效期等时间戳会差 8 小时。
+
+- **镜像加了健康检查与 `init` 进程**：`docker ps` 能看到 `healthy`；
+  `docker stop` 时信号能正常转发。
+
+- compose 文件重新分工：
+
+  | 文件 | 网络 | 来源 |
+  |---|---|---|
+  | `docker-compose.yml` | host | **Docker Hub 镜像**（默认，推荐） |
+  | `docker-compose.build.yml` | host | 从源码构建（开发者 / 离线） |
+  | `docker-compose.bridge.yml` | bridge | Docker Hub 镜像 |
+  | `docker-compose.host.yml` | host | 从源码构建（兼容副本，旧命令仍可用） |
+
+- 发布镜像时关掉 provenance 证明（`provenance: false`）：带 attestation 的 OCI index
+  在群晖等较老的 docker 上拉取会报 `unknown manifest`。
+
+### 文档
+
+- README / README.en / INSTALL 的安装章节改为「镜像优先」，补充镜像加速、
+  `QILIN_USERS_FILE` 与 `TZ` 的说明。
+
 ## [1.5.0] - 2026-09-18
 
 ### 变更（破坏性）

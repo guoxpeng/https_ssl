@@ -1,5 +1,9 @@
-# 默认使用 host 网络模式：容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口。
+# https_ssl —— 默认部署文件（推荐）
 #
+# 直接使用 Docker Hub 上已构建好的镜像，不编译源码，几十秒就能跑起来：
+#   docker compose up -d
+#
+# 网络模式是 host：容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口。
 # 好处：面板里新增反向代理时，端口填了即生效 —— 不用改这个文件，也不用重建容器。
 # （桥接模式下端口映射在容器创建时就固定了，每加一个端口都得改 ports 再重建容器。）
 #
@@ -10,22 +14,29 @@
 #   3. 端口若已被宿主机上别的服务占用，nginx 会因为绑不上而加载失败
 #      （已运行的站点不受影响，但新站点不生效）。
 #
-# 用法：
-#   docker compose up -d --build
-#
 # 注意：host 模式下不能有 ports 段，Docker 会直接报错。
+#
+# 想自己改代码、从源码构建：改用 docker-compose.build.yml
+# 想换镜像（比如用国内镜像加速站）：
+#   在 .env 里写 QILIN_IMAGE=镜像地址:标签
 services:
   qilin-ssl:
+    image: ${QILIN_IMAGE:-nameguoguo/https_ssl:latest}
     container_name: qilin_ssl
-    build: .
     network_mode: host
+    # 用 init 当 1 号进程，docker stop 时能正常转发信号、回收僵尸进程
+    init: true
     volumes:
       - ./data/ca:/app/ca                       # 根证书
       - ./data/certs:/app/certs                 # 签发的证书
       - ./data/uploads:/app/uploads             # 上传文件
       - ./data/proxy:/app/proxy                 # 反向代理配置与证书
+      - ./data:/app/data                        # 用户表等运行时状态
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
       - QILIN_PROXY_DIR=/app/proxy
+      # 用户表放数据卷里，重建容器不会把改过的密码冲掉
+      - QILIN_USERS_FILE=/app/data/users.json
       # 告诉面板当前是 host 模式，界面上的端口提示会相应变化
       - QILIN_HOST_NETWORK=1
       # host 模式没有端口映射，面板端口由这里决定（默认 2002）。

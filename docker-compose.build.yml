@@ -1,0 +1,31 @@
+# https_ssl —— 从源码构建（开发者 / 想改代码 / 拉不到 Docker Hub 镜像时用）
+#
+#   docker compose -f docker-compose.build.yml up -d --build
+#
+# 与默认的 docker-compose.yml 只差一点：用本目录的 Dockerfile 现场构建，
+# 而不是拉 Docker Hub 上的镜像。首次构建需要几分钟。
+#
+# 网络模式同样是 host，说明见 docker-compose.yml 顶部注释。
+services:
+  qilin-ssl:
+    container_name: qilin_ssl
+    build: .
+    image: nameguoguo/https_ssl:dev          # 构建产物打的标签，便于和官方镜像区分
+    network_mode: host
+    init: true
+    volumes:
+      - ./data/ca:/app/ca                       # 根证书
+      - ./data/certs:/app/certs                 # 签发的证书
+      - ./data/uploads:/app/uploads             # 上传文件
+      - ./data/proxy:/app/proxy                 # 反向代理配置与证书
+      - ./data:/app/data                        # 用户表等运行时状态
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - QILIN_PROXY_DIR=/app/proxy
+      - QILIN_USERS_FILE=/app/data/users.json
+      - QILIN_HOST_NETWORK=1
+      - QILIN_PORT=${QILIN_PORT:-2002}
+      - QILIN_ADMIN_PASSWORD=${QILIN_ADMIN_PASSWORD:-admin}
+      - QILIN_SECRET_KEY=${QILIN_SECRET_KEY:-}
+      - QILIN_COOKIE_SECURE=${QILIN_COOKIE_SECURE:-0}
+    restart: always

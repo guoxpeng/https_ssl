@@ -91,8 +91,9 @@ with far fewer privileges.
 
 ### 1. Get the code onto your server
 
-One-liner — it clones the repo, writes a `.env` with a random session key, builds the
-container, waits for the panel to come up and prints the address:
+One-liner — it pulls the published image from Docker Hub, writes a `.env` with a random
+session key, starts the container, waits for the panel to come up and prints the address.
+No `git`, no build: it is ready in seconds.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh | bash
@@ -102,6 +103,7 @@ It installs into `./https_ssl` by default. Override with environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `IMAGE` | `nameguoguo/https_ssl:latest` | Image to run. Point it at a mirror to avoid slow Docker Hub access, or set `IMAGE=build` to clone and build from source instead |
 | `INSTALL_DIR` | `<cwd>/https_ssl` | Where to install |
 | `PANEL_PORT` | `2002` | Panel port |
 | `NETWORK` | `host` | `host` (default) or `bridge`. **In `host` mode a reverse-proxy port works the moment you enter it** — no compose edit, no container rebuild. `bridge` uses `docker-compose.bridge.yml` and needs the port in `ports` plus a rebuild |
@@ -152,7 +154,7 @@ NETWORK=bridge INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
 # switch an existing install
 cd /vol1/docker/https_ssl
 sudo docker compose down
-sudo docker compose -f docker-compose.bridge.yml up -d --build
+sudo docker compose -f docker-compose.bridge.yml up -d
 ```
 
 > In `bridge` mode `PANEL_PORT` / `PROXY_PORT` work through the compose `ports` mapping.
@@ -177,12 +179,24 @@ Or simply upload the project directory, e.g. to `/vol1/docker/https_ssl`.
 
 ### 2. Start it
 
+With the published image (the `docker-compose.yml` you downloaded above):
+
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
+From source (after `git clone`, using `docker-compose.build.yml`):
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+```
+
+> To upgrade later: `docker compose pull && docker compose up -d` (image), or
+> `git pull && docker compose -f docker-compose.build.yml up -d --build` (source).
+> The user table lives in the mounted `./data/users.json`, so your password survives.
+
 > On Feiniu NAS and similar systems the `admin` user is not in the `docker` group,
-> so prefix the command with `sudo`: `sudo docker compose up -d --build`
+> so prefix the command with `sudo`: `sudo docker compose up -d`
 
 ### 3. Open the panel
 
@@ -323,6 +337,8 @@ All settings are environment variables:
 | `QILIN_ADMIN_PASSWORD` | `admin` | Initial password used to create the `admin` account on first start. **Only applies while `users.json` does not exist** |
 | `QILIN_SECRET_KEY` | random | Session signing key. When empty a random key is generated on every start, **so every container restart logs everyone out** — set it explicitly |
 | `QILIN_COOKIE_SECURE` | `0` | Set to `1` to send the session cookie over HTTPS only |
+| `QILIN_USERS_FILE` | `/app/users.json` | Where the user table lives. Inside the container by default, **so a rebuild loses it**; the compose files point it at the mounted `/app/data/users.json` instead |
+| `TZ` | `UTC` | Container timezone. Certificate validity timestamps follow it — `Asia/Shanghai` for China |
 | `QILIN_PROXY_DIR` | `/app/proxy` | Reverse proxy site configs and certificates |
 | `QILIN_PROXY_LISTEN_HOST` | empty | Proxy listen address; empty means all addresses |
 | `QILIN_OPENSSL` | `/usr/bin/openssl` | Path to the OpenSSL executable |
@@ -341,8 +357,11 @@ docker compose logs -f
 docker compose restart
 docker compose down
 
-# upgrade (after changing code)
-docker compose up -d --build
+# upgrade (image)
+docker compose pull && docker compose up -d
+
+# upgrade (from source, after git pull)
+docker compose -f docker-compose.build.yml up -d --build
 
 # health check against your real data
 docker cp scripts/verify_deploy.py qilin_ssl:/tmp/
@@ -379,16 +398,21 @@ certificate you ever issued becomes invalid**. Keep an offline copy.
 
 ## Known gotchas
 
-1. **Recreating the container may reset your password.** `users.json` lives inside the
-   container, not in a mounted volume. `docker compose up -d --build` recreates the
-   account from `.env` and **your changed password is lost**. Back it up and restore:
+1. **Where the user table lives decides whether a rebuild loses your password.**
+   The account file defaults to `/app/users.json` *inside* the container, so recreating
+   the container falls back to the initial password from `.env`. The compose files
+   shipped in this repo point `QILIN_USERS_FILE` at the mounted `/app/data/users.json`,
+   so upgrades and rebuilds keep your password.
+
+   If you wrote your own compose file or used `docker run` without that variable,
+   back the file up before upgrading:
 
    ```bash
-   docker cp qilin_ssl:/app/users.json ./data/users.json.bak     # before upgrading
-   # ...docker compose up -d --build...
-   docker cp ./data/users.json.bak qilin_ssl:/app/users.json
+   docker cp qilin_ssl:/app/users.json ./users.json.bak     # before upgrading
+   # ...recreate the container...
+   docker cp ./users.json.bak qilin_ssl:/app/users.json
    docker exec qilin_ssl chmod 600 /app/users.json
-   docker restart qilin_ssl
+   docker restart qilin_ssl     # USERS is read at startup — copying alone is not enough
    ```
 
 2. **Proxy ports must be declared first (`bridge` mode only).** In `bridge` mode a proxy

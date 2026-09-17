@@ -30,6 +30,7 @@ dist/
 # 版本控制元数据
 .git/
 .gitignore
+.github/
 
 # Python 产物
 __pycache__/
