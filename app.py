@@ -46,6 +46,19 @@ PROXY_CERTS_DIR = os.path.join(PROXY_DIR, 'certs')
 PROXY_LISTEN_HOST = os.environ.get('QILIN_PROXY_LISTEN_HOST', '')
 PROXY_DATA_FILE = os.path.join(PROXY_DIR, 'proxy_data.json')
 
+# 容器是否跑在 host 网络模式下（docker-compose.host.yml 会置 1）。
+# 桥接模式下端口映射在容器创建时就固定了，用户必须先在 compose 的 ports 里
+# 放行；host 模式下 nginx 监听的端口就是宿主机端口，填了即生效。
+# 两种模式下界面要给的提示完全不同，所以这里读出来传给模板。
+HOST_NETWORK = os.environ.get('QILIN_HOST_NETWORK') == '1'
+
+# 面板监听端口。桥接模式下容器内固定 2002，由 compose 的端口映射对外暴露；
+# host 模式下没有映射，Flask 直接绑宿主机端口，改端口只能靠这个变量。
+try:
+    PANEL_PORT = int(os.environ.get('QILIN_PORT') or 2002)
+except ValueError:
+    PANEL_PORT = 2002
+
 CA_KEY = os.path.join(CA_DIR, 'qilin-ca.key')
 CA_CRT = os.path.join(CA_DIR, 'qilin-ca.crt')
 CA_INFO_FILE = os.path.join(CA_DIR, 'ca_info.json')
@@ -474,7 +487,7 @@ def verify():
 @app.route('/proxy')
 @login_required
 def proxy():
-    return render_template('proxy.html')
+    return render_template('proxy.html', host_network=HOST_NETWORK)
 
 
 @app.route('/tutorial')
@@ -1372,4 +1385,4 @@ def create_proxy():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=2002, debug=False)
+    app.run(host='0.0.0.0', port=PANEL_PORT, debug=False)

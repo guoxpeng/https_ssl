@@ -1,0 +1,41 @@
+# host 网络模式：容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口。
+#
+# 好处：面板里新增反向代理时，端口填了即生效 —— 不需要改这个文件，
+#       也不用重建容器。桥接模式下端口映射在容器创建时就固定了，
+#       每加一个端口都得改 ports 再 docker compose up -d。
+#
+# 代价：
+#   1. 失去容器的网络隔离，容器与宿主机共用网络栈；
+#   2. 仅 Linux 支持。Docker Desktop（macOS / Windows）不支持 host 模式，
+#      这些平台请用默认的 docker-compose.yml；
+#   3. 端口若已被宿主机上别的服务占用，nginx 会因为绑不上而加载失败
+#      （已运行的站点不受影响，但新站点不生效）。
+#
+# 用法：
+#   docker compose -f docker-compose.host.yml up -d --build
+#
+# 注意：host 模式下不能有 ports 段，Docker 会直接报错。
+services:
+  qilin-ssl:
+    container_name: qilin_ssl
+    build: .
+    network_mode: host
+    volumes:
+      - ./data/ca:/app/ca                       # 根证书
+      - ./data/certs:/app/certs                 # 签发的证书
+      - ./data/uploads:/app/uploads             # 上传文件
+      - ./data/proxy:/app/proxy                 # 反向代理配置与证书
+    environment:
+      - QILIN_PROXY_DIR=/app/proxy
+      # 告诉面板当前是 host 模式，界面上的端口提示会相应变化
+      - QILIN_HOST_NETWORK=1
+      # host 模式没有端口映射，面板端口只能由这里决定（默认 2002）
+      - QILIN_PORT=${QILIN_PORT:-2002}
+      # 管理员 admin 的初始密码，默认 admin。
+      # 想换成别的：在 .env 里写 QILIN_ADMIN_PASSWORD=你的密码
+      - QILIN_ADMIN_PASSWORD=${QILIN_ADMIN_PASSWORD:-admin}
+      # 会话签名密钥；不设置时每次启动随机生成，重启会导致所有登录失效
+      - QILIN_SECRET_KEY=${QILIN_SECRET_KEY:-}
+      # 面板经 HTTPS 暴露时置 1，会话 Cookie 仅在 HTTPS 下发送
+      - QILIN_COOKIE_SECURE=${QILIN_COOKIE_SECURE:-0}
+    restart: always

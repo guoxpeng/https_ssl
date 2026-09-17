@@ -12,6 +12,9 @@ services:
       - ./data/proxy:/app/proxy                 # 反向代理配置与证书
     environment:
       - QILIN_PROXY_DIR=/app/proxy
+      # 桥接模式下容器内固定监听 2002，对外端口由上面的 ports 映射决定。
+      # 这里写死是为了不让 .env 里的 QILIN_PORT 影响容器内的监听端口。
+      - QILIN_PORT=2002
       # 管理员 admin 的初始密码，默认 admin。
       # 想换成别的：在 .env 里写 QILIN_ADMIN_PASSWORD=你的密码
       - QILIN_ADMIN_PASSWORD=${QILIN_ADMIN_PASSWORD:-admin}

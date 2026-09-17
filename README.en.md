@@ -100,7 +100,8 @@ It installs into `./https_ssl` by default. Override with environment variables:
 |---|---|---|
 | `INSTALL_DIR` | `<cwd>/https_ssl` | Where to install |
 | `PANEL_PORT` | `2002` | Panel port |
-| `PROXY_PORT` | `14000` | Example reverse-proxy port. Change it when running a second instance or when 14000 is taken |
+| `NETWORK` | `bridge` | `bridge` or `host`. **In `host` mode a reverse-proxy port works the moment you enter it** — no compose edit, no container rebuild |
+| `PROXY_PORT` | `14000` | Example reverse-proxy port. `bridge` mode only |
 | `ADMIN_PASSWORD` | `admin` | Initial admin password — change it in Settings after logging in |
 | `REPO` | this repo | Source repository |
 | `SUDO` | auto | `1` forces sudo, `0` forbids it |
@@ -116,6 +117,36 @@ INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 \
 > **`curl | bash` means sudo cannot prompt for a password** (stdin is the script itself).
 > If your account is not in the `docker` group (the `admin` user on Feiniu NAS is not),
 > run `sudo -v` once beforehand, or use `curl -fsSL <url> | sudo bash`.
+
+### Bridge vs host networking
+
+Docker fixes bridge-network port mappings **when the container is created** — you cannot
+add one at runtime. So with the default `bridge` mode, every new reverse-proxy port needs
+an entry in `docker-compose.yml` plus a `docker compose up -d` before it is reachable.
+**Filling in the port in the panel does not make it reachable by itself.**
+
+`host` mode lets the container use the host network directly: whatever port nginx listens
+on is immediately a host port, so **a port works as soon as you enter it**.
+
+| | `bridge` (default) | `host` |
+|---|---|---|
+| Reverse-proxy port | compose edit + rebuild each time | works immediately |
+| Network isolation | yes | none (shares the host network stack) |
+| Platforms | all, incl. Docker Desktop on Mac / Windows | **Linux only** |
+| Port already used on the host | container fails to start | only that one site fails to load |
+
+```bash
+# one-liner install in host mode
+NETWORK=host INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
+
+# switch an existing install
+cd /vol1/docker/https_ssl
+sudo docker compose down
+sudo docker compose -f docker-compose.host.yml up -d --build
+```
+
+> In host mode `PANEL_PORT` / `PROXY_PORT` no longer apply — the panel port comes from
+> `QILIN_PORT` in `.env` instead.
 
 If you prefer to read the script before running it:
 

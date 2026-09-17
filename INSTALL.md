@@ -62,7 +62,8 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 |---|---|---|
 | `INSTALL_DIR` | `<当前目录>/https_ssl` | 安装目录 |
 | `PANEL_PORT` | `2002` | 面板端口 |
-| `PROXY_PORT` | `14000` | 示例反向代理端口。同一台机器上装第二个实例、或 14000 已被占用时改掉它 |
+| `NETWORK` | `bridge` | `bridge` 或 `host`。**`host` 模式下面板里新增反代时端口填了即生效**，不用改 compose 也不用重建容器 |
+| `PROXY_PORT` | `14000` | 示例反向代理端口。仅 `bridge` 模式有效 |
 | `ADMIN_PASSWORD` | `admin` | 管理员初始密码，登录后请到「设置」页修改 |
 | `REPO` | 本仓库 | 代码仓库地址 |
 | `SUDO` | 自动判断 | 置 `1` 强制用 sudo，置 `0` 强制不用 |
@@ -79,6 +80,37 @@ curl -fsSL https://raw.githubusercontent.com/guoxpeng/https_ssl/main/install.sh 
 > **`curl | bash` 时 sudo 无法弹密码提示**（stdin 被脚本占用）。如果你的账号不在
 > `docker` 组（飞牛 NAS 的 `admin` 就是这种），先 `sudo -v` 缓存一次凭据，
 > 或者用 `curl -fsSL <地址> | sudo bash` 直接以 root 执行。
+
+### 桥接模式 vs host 模式（重要）
+
+**为什么要区分**：Docker 桥接网络的端口映射在**容器创建时就固定了**，运行时加不了。
+所以默认的 `bridge` 模式下，每加一个反向代理端口，都得先改 `docker-compose.yml` 的
+`ports` 再 `docker compose up -d` 重建容器，否则外部连不上——**面板里填完端口不等于对外可用**。
+
+`host` 模式让容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口，
+**面板里填了即生效，永远不需要重建容器**。
+
+| | `bridge`（默认） | `host` |
+|---|---|---|
+| 反代端口 | 每加一个都要改 compose + 重建 | 填了即生效 |
+| 网络隔离 | 有 | 无（容器与宿主机共用网络栈） |
+| 平台 | 全平台（含 Mac / Windows 的 Docker Desktop） | **仅 Linux** |
+| 端口被宿主机别的服务占用 | 容器起不来 | 只有那一个站点加载失败 |
+
+**切到 host 模式**：
+
+```bash
+# 一键安装时直接选
+NETWORK=host INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
+
+# 已经装好的，换成 host 模式
+cd /vol1/docker/https_ssl
+sudo docker compose down
+sudo docker compose -f docker-compose.host.yml up -d --build
+```
+
+> host 模式下 `PANEL_PORT` / `PROXY_PORT` 不再通过端口映射生效，
+> 面板端口改由 `.env` 里的 `QILIN_PORT` 决定。
 
 ### 手动安装
 
@@ -274,7 +306,9 @@ server {
          - "12002:12002"    # 反向代理：面板自身 HTTPS
    ```
 
-2. `docker compose up -d` 重建容器让端口生效。
+   > 如果是 **host 模式**，跳过这一步——端口直接就是宿主机端口，填了即生效。
+
+2. `docker compose up -d` 重建容器让端口生效（host 模式同样跳过）。
 
 3. 面板「反向代理」→ 新增：
 

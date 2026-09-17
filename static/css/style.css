@@ -528,3 +528,44 @@ input:checked + .slider:before {
     align-items: center;
     justify-content: flex-start; /* 确保内容左对齐 */
 }
+/* 表单/页面里的补充说明与前置条件提示 */
+.form-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #666;
+}
+
+.form-hint code {
+    background: #f0f0f0;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 12px;
+    color: #c0392b;
+}
+
+.form-hint.warn {
+    background: #fdf6e3;
+    border-left: 3px solid #e6a817;
+    border-radius: 4px;
+    color: #7a5c14;
+    margin-bottom: 15px;
+    padding: 10px 12px;
+}
+
+.form-hint.warn strong {
+    color: #6b4e0d;
+}
+
+.form-hint.ok {
+    background: #eef7ee;
+    border-left: 3px solid #5cb85c;
+    border-radius: 4px;
+    color: #2f5d31;
+    margin-bottom: 15px;
+    padding: 10px 12px;
+}
+
+.form-hint.ok strong {
+    color: #245026;
+}

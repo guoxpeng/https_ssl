@@ -2,6 +2,51 @@
 
 本文件记录本项目的所有重要变更。
 
+## [1.4.0] - 2026-09-17
+
+### 新增
+
+- **host 网络模式：反向代理端口填了即生效。**
+
+  在此之前，`bridge` 模式下每加一个反向代理端口都要改 `docker-compose.yml` 的
+  `ports` 再重建容器 —— 因为 **Docker 的端口映射在容器创建时就固定了，运行时加不了**。
+  面板里填完端口不等于对外可用，这一点很容易踩（实测时就是这样：把反代后地址改成
+  `https://192.168.5.3:5245` 后连接被拒，因为 5245 没在 compose 里放行）。
+
+  新增 `docker-compose.host.yml`：容器直接使用宿主机网络，nginx 监听的端口
+  就是宿主机端口，**新增反代时端口填了即生效，永远不需要重建容器**。
+
+  代价是失去容器网络隔离，且仅 Linux 可用（Docker Desktop 的 Mac / Windows
+  不支持 host 模式），所以**默认仍是 `bridge`**，按需切换：
+
+  ```bash
+  # 一键安装时选
+  NETWORK=host bash install.sh
+
+  # 已装好的切换
+  docker compose down
+  docker compose -f docker-compose.host.yml up -d --build
+  ```
+
+- **面板端口可配置** `QILIN_PORT`。此前 `app.run(port=2002)` 是写死的；
+  host 模式下没有端口映射，等于面板端口永远改不了。现在由 `QILIN_PORT` 决定
+  （默认仍是 2002）。`bridge` 模式的 compose 里写死 `QILIN_PORT=2002`，
+  避免 `.env` 的值影响容器内监听端口。
+
+- **反代页面的端口提示随网络模式变化**：`bridge` 模式提示"端口要先在
+  `docker-compose.yml` 的 `ports` 里放行并重建容器"；host 模式提示"填了即生效"。
+  两种模式下都提示**「反代后地址」要填浏览器实际访问的地址（本机 IP），
+  不是后端服务所在机器的 IP** —— 这也是实测时踩到的误解。
+
+- `install.sh` 新增 `NETWORK` 变量（`bridge` / `host`），并在 `.env` 中写入
+  `QILIN_PORT`；所有 compose 命令统一带上 `-f`，打印给用户的命令也一致。
+
+### 文档
+
+- INSTALL.md / README.en.md 新增「桥接模式 vs host 模式」对照小节
+  （端口行为、网络隔离、平台支持、端口冲突时的表现）。
+- 「让面板自己也走 HTTPS」小节补注：host 模式可跳过加端口与重建两步。
+
 ## [1.3.2] - 2026-09-17
 
 在真机上实测一键安装脚本时发现的问题，一并修掉。
