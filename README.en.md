@@ -430,6 +430,14 @@ certificate you ever issued becomes invalid**. Keep an offline copy.
       certificate whose SAN covers that IP;
    3. install the root CA into your device's trust store for a green lock.
 
+   If a reverse-proxy site still says "not secure" while the panel works, check three
+   things: (a) the address you visit is covered by the certificate's SAN — a different
+   IP or hostname is a name mismatch, and the panel's Verify page can check it for you;
+   (b) restart the browser after installing the CA, since Chromium-based browsers can
+   hang on to the old trust state; (c) click the lock icon to read the real reason —
+   "some parts of this page are not secure" means the backend page loads `http://`
+   assets (mixed content), which the backend application has to fix.
+
    Note that **Firefox keeps its own trust store and does not read the Windows one** —
    set `security.enterprise_roots.enabled` to `true` in `about:config`, or import the CA
    manually under Authorities.
