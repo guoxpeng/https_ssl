@@ -275,8 +275,9 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 1. **证书不被浏览器信任怎么办？**
    - 需要将生成的 CA 证书安装到操作系统的受信任根证书存储区
-   - 装完**把浏览器完全退出再打开**（Edge / Chrome 有时会沿用旧的信任状态），
-     必要时用新配置验一下：
+   - 装完**把浏览器完全退出再打开**：Edge / Chrome 会把“继续访问”的证书例外保留到
+     会话结束，**装 CA 之前就开着的浏览器会一直显示不安全**，重启才清掉 ——
+     新开一个 InPrivate / 无痕窗口就能 5 秒自测。必要时用新配置验一下：
      `msedge.exe --headless=new --user-data-dir=%TEMP%\edgecerttest --dump-dom https://<IP>:<端口>/`
 2. **如何在移动设备上信任证书？**
    - 将 CA 证书发送到移动设备并在设备设置中安装证书
