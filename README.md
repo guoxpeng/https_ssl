@@ -275,7 +275,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 - 系统生成的 CA 证书和私钥仅用于测试和开发环境
 - 在生产环境中，建议使用正规 CA 机构签发的证书
 - 请妥善保管 CA 私钥，避免泄露
-- CA 私钥不会通过面板分发（`/download/ca/` 只放行根证书 `qilin-ca.crt`），  
+- CA 私钥不会通过面板分发（`/download/ca/` 只放行根证书 `https-ssl-ca.crt`），  
   需要备份请直接从宿主目录 `./data/ca` 取
 - 定期更换用户密码，提高系统安全性
 - 容器内 nginx 与 Flask 以同一用户运行，请勿将该容器暴露到不可信网络
@@ -314,7 +314,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 ## 版本信息
 
-当前版本：v1.6.0
+当前版本：v1.6.1
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 

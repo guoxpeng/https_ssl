@@ -6,7 +6,7 @@
 # 这类客户端需自行加 --ssl-no-revoke 或改用 Node/Python 客户端。
 #
 # 用法（PowerShell）：
-#   .\trust-ca-windows.ps1 -CaPath .\qilin-ca.crt
+#   .\trust-ca-windows.ps1 -CaPath .\https-ssl-ca.crt
 # 不加管理员也能装进 CurrentUser\Root，Chrome / Edge 即可生效；
 # 以管理员运行则装进 LocalMachine\Root，全机器生效。
 param(
@@ -39,7 +39,7 @@ if ($isAdmin) {
 # 2. 配置 Node.js 信任（用户级，无需管理员）
 $caDir = Join-Path $env:USERPROFILE '.https_ssl'
 New-Item -ItemType Directory -Path $caDir -Force | Out-Null
-$stableCa = Join-Path $caDir 'qilin-ca.crt'
+$stableCa = Join-Path $caDir 'https-ssl-ca.crt'
 Copy-Item -LiteralPath $ca -Destination $stableCa -Force
 
 [Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $stableCa, 'User')

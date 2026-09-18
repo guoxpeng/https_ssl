@@ -100,7 +100,7 @@ docker run -d --name qilin_ssl \
 
 | 容器内路径 | 内容 |
 |---|---|
-| `/app/ca` | 根证书与 CA 私钥 |
+| `/app/ca` | 根证书与 CA 私钥（`https-ssl-ca.crt` / `.key`，1.6.1 起由 `qilin-ca.*` 自动改名） |
 | `/app/certs` | 签发的所有证书 |
 | `/app/uploads` | 上传的自定义证书 |
 | `/app/proxy` | 反向代理站点配置与证书 |

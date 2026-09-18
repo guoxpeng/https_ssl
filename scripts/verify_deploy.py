@@ -129,12 +129,12 @@ def main():
     check('模板引用的静态资源都存在', not missing, str(missing))
 
     print('\n[6] 下载接口权限')
-    r = c.get('/download/ca/qilin-ca.crt')
+    r = c.get('/download/ca/https-ssl-ca.crt')
     if os.path.isfile(A.CA_CRT):
         check('根证书可下载', r.status_code == 200, f'status={r.status_code}')
     else:
         print('    （尚无 CA，跳过）')
-    r = c.get('/download/ca/qilin-ca.key')
+    r = c.get('/download/ca/https-ssl-ca.key')
     check('CA 私钥被拒绝（必须 403）', r.status_code == 403, f'status={r.status_code}')
 
     print('\n[7] 未登录访问被拦截')

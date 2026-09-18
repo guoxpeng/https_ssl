@@ -85,6 +85,12 @@ def run(workdir):
     check('创建无密码 CA', r.status_code == 200, r.get_data(as_text=True)[:120])
     check('CA 证书已生成', os.path.isfile(qilin.CA_CRT))
     check('CA 名称正确转义', '测试机构' in r.get_data(as_text=True))
+    # 回归：string_mask 只决定「输出用 UTF8String」，配置值本身不加 utf8 = yes
+    # 时仍按 latin-1 读，中文会被再编码一次，证书主题里就成了双重编码的乱码
+    # （Windows 证书管理器的「颁发给」栏看到的就是它）。
+    ok, subject, _ = qilin._openssl(['x509', '-in', qilin.CA_CRT, '-noout',
+                                     '-subject', '-nameopt', 'utf8'])
+    check('CA 主题中文未被双重编码', ok and '测试机构' in subject, subject.strip())
     r = client.get('/check_ca_password')
     check('CA 密码状态接口可用', r.status_code == 200 and r.get_json()['has_password'] is False)
 
@@ -110,6 +116,10 @@ def run(workdir):
     check('中文名签发成功', r.status_code == 200, r.get_data(as_text=True)[:160])
     body = r.get_data(as_text=True)
     check('返回行含证书名', '我的证书' in body)
+    ok, subject, _ = qilin._openssl([
+        'x509', '-in', os.path.join(qilin.CERTS_DIR, '我的证书', '我的证书.crt'),
+        '-noout', '-subject', '-nameopt', 'utf8'])
+    check('证书主题中文未被双重编码', ok and '我的证书' in subject, subject.strip())
     check('返回行无脚本注入', '<script>' not in body)
     r = client.post('/create_cert', data={'cert_name': '我的证书'})
     check('重名证书被拒', r.status_code == 409, f'status={r.status_code}')
@@ -134,9 +144,9 @@ def run(workdir):
         quoted = qilin.url_for('download', cert_dir='我的证书', filename='我的证书.crt')
     r = client.get(quoted)
     check('中文名证书可下载', r.status_code == 200, f'status={r.status_code}')
-    r = client.get('/download/ca/qilin-ca.crt')
+    r = client.get('/download/ca/https-ssl-ca.crt')
     check('CA 证书可下载', r.status_code == 200)
-    r = client.get('/download/ca/qilin-ca.key')
+    r = client.get('/download/ca/https-ssl-ca.key')
     check('CA 私钥被拒绝下载', r.status_code == 403, f'status={r.status_code}')
 
     print('\n[7] 证书验证：multipart 表单（前端真实提交方式）')
@@ -341,6 +351,26 @@ def run(workdir):
             os.environ['QILIN_ADMIN_PASSWORD'] = saved
 
 
+def check_legacy_ca_migration(openssl_cmd, admin_password):
+    """旧版本用 qilin-ca.* 命名，升级复用数据卷时必须自动认领。"""
+    workdir = prepare_workspace()
+    ca_dir = os.path.join(workdir, 'ca')
+    os.makedirs(ca_dir, exist_ok=True)
+    legacy = os.path.join(ca_dir, 'qilin-ca.crt')
+    with open(legacy, 'w', encoding='utf-8') as f:
+        f.write('legacy-ca-placeholder')
+    env = dict(os.environ)
+    env.update(QILIN_OPENSSL=openssl_cmd, QILIN_ADMIN_PASSWORD=admin_password,
+               QILIN_SECRET_KEY='smoke-test-key',
+               QILIN_PROXY_DIR=os.path.join(workdir, 'proxy'))
+    subprocess.run([sys.executable, '-c', 'import app'], cwd=workdir, env=env,
+                   capture_output=True)
+    check('启动时把 qilin-ca.* 改名为 https-ssl-ca.*',
+          os.path.isfile(os.path.join(ca_dir, 'https-ssl-ca.crt'))
+          and not os.path.exists(legacy))
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
 def main():
     openssl_cmd = find_openssl()
     if not openssl_cmd:
@@ -357,6 +387,7 @@ def main():
     print(f'workdir : {workdir}')
     try:
         run(workdir)
+        check_legacy_ca_migration(openssl_cmd, ADMIN_PASSWORD)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

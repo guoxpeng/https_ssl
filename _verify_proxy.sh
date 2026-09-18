@@ -58,7 +58,7 @@ echo '--- 站点配置 ---'
 ls -l "$SITE_DIR" 2>/dev/null
 
 echo '--- 经 nginx 访问（完整链路）---'
-curl -s --resolve "$HOST:$PORT:127.0.0.1" --cacert /app/ca/qilin-ca.crt \
+curl -s --resolve "$HOST:$PORT:127.0.0.1" --cacert /app/ca/https-ssl-ca.crt \
     -o /dev/null -w 'with_ca=%{http_code}\n' "https://$HOST:$PORT/login"
 
 curl -s --resolve "$HOST:$PORT:127.0.0.1" \

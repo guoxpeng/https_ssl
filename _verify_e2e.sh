@@ -49,8 +49,8 @@ echo
 
 echo '--- 下载 ---'
 curl -s -b "$CJ" -o /dev/null -w 'crt=%{http_code}\n' "$B/download/$CERT/$CERT.crt"
-curl -s -b "$CJ" -o /dev/null -w 'ca=%{http_code}\n' "$B/download/ca/qilin-ca.crt"
-curl -s -b "$CJ" -o /dev/null -w 'ca_key=%{http_code}（403 为预期）\n' "$B/download/ca/qilin-ca.key"
+curl -s -b "$CJ" -o /dev/null -w 'ca=%{http_code}\n' "$B/download/ca/https-ssl-ca.crt"
+curl -s -b "$CJ" -o /dev/null -w 'ca_key=%{http_code}（403 为预期）\n' "$B/download/ca/https-ssl-ca.key"
 
 echo '--- 清理 ---'
 curl -s -b "$CJ" -X POST "$B/delete_certs" \

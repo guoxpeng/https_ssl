@@ -59,7 +59,7 @@
                             <td>{{ ca_info.org_name }}</td>
                             <td>{{ ca_info.valid_until }}</td>
                             <td>{{ ca_info.created_at }}</td>
-                            <td><a href="{{ url_for('download', cert_dir='ca', filename='qilin-ca.crt') }}"><i class="fas fa-download"></i> 下载CA证书</a></td>
+                            <td><a href="{{ url_for('download', cert_dir='ca', filename='https-ssl-ca.crt') }}"><i class="fas fa-download"></i> 下载CA证书</a></td>
                         </tr>
                         {% else %}
                         <tr class="empty-row">

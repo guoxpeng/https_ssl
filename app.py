@@ -60,9 +60,15 @@ try:
 except ValueError:
     PANEL_PORT = 2002
 
-CA_KEY = os.path.join(CA_DIR, 'qilin-ca.key')
-CA_CRT = os.path.join(CA_DIR, 'qilin-ca.crt')
+# CA 文件统一用 https_ssl-ca.* 命名（面板下载、文档、脚本都按这个名字写）。
+CA_BASENAME = 'https-ssl-ca'
+CA_KEY = os.path.join(CA_DIR, f'{CA_BASENAME}.key')
+CA_CRT = os.path.join(CA_DIR, f'{CA_BASENAME}.crt')
+CA_CNF = os.path.join(CA_DIR, f'{CA_BASENAME}.cnf')
+CA_SRL = os.path.join(CA_DIR, f'{CA_BASENAME}.srl')
 CA_INFO_FILE = os.path.join(CA_DIR, 'ca_info.json')
+# 1.6.0 及更早版本用的是 qilin-ca.* ，升级时要把老卷里的文件认出来。
+LEGACY_CA_BASENAME = 'qilin-ca'
 
 # 用户表位置。默认放在代码目录下（历史行为，不改动既有部署）；
 # 用 compose 部署时指向挂载出来的数据卷，重建容器才不会把改过的密码冲掉。
@@ -84,6 +90,25 @@ if not os.environ.get('QILIN_SECRET_KEY'):
 for _d in (CA_DIR, CERTS_DIR, UPLOAD_DIR, PROXY_SITES_DIR, PROXY_CERTS_DIR,
            os.path.dirname(USERS_FILE)):
     os.makedirs(_d, exist_ok=True)
+
+
+def _migrate_legacy_ca_files():
+    """把老版本的 qilin-ca.* 改名成 https-ssl-ca.*。
+
+    容器升级时数据卷会被复用，只改新名字会让已有的 CA「消失」
+    （面板变成未创建状态，所有已签发证书的链也校验不了），
+    因此启动时先认领老文件。新文件已存在时不覆盖。
+    """
+    for _suffix in ('key', 'crt', 'cnf', 'srl'):
+        _old = os.path.join(CA_DIR, f'{LEGACY_CA_BASENAME}.{_suffix}')
+        _new = os.path.join(CA_DIR, f'{CA_BASENAME}.{_suffix}')
+        if os.path.isfile(_old) and not os.path.exists(_new):
+            os.rename(_old, _new)
+            print(f'[info] CA 文件已由 {os.path.basename(_old)} 更名为 '
+                  f'{os.path.basename(_new)}', flush=True)
+
+
+_migrate_legacy_ca_files()
 if not os.path.exists(PROXY_DATA_FILE):
     with open(PROXY_DATA_FILE, 'w', encoding='utf-8') as _f:
         _f.write('[]')
@@ -146,10 +171,15 @@ def _err(message, code=400):
 
 
 def _openssl(args, timeout=15):
-    """执行 OpenSSL 命令，返回 (是否成功, stdout, stderr)。"""
+    """执行 OpenSSL 命令，返回 (是否成功, stdout, stderr)。
+
+    显式按 UTF-8 解码：证书主题里可能有中文，text=True 会按宿主默认编码
+    （中文 Windows 上是 cp936）解码，遇到 UTF-8 字节直接抛 UnicodeDecodeError。
+    """
     try:
         proc = subprocess.run(
             [OPENSSL_CMD, *args], capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
             timeout=timeout, stdin=subprocess.DEVNULL,
         )
         return proc.returncode == 0, proc.stdout or '', proc.stderr or ''
@@ -346,9 +376,15 @@ def _write_subj_config(path, fields, ca=False):
 
     非 ASCII 值经 -subj 传递会按 latin-1 编码导致证书乱码，
     改用配置文件里的 utf8 字符串类型可以保留原样。
+
+    但只有 string_mask 还不够：string_mask 决定「输出用什么类型」，
+    request 的字段值默认仍按 latin-1 读，于是「局域网」这种值会被
+    当成 9 个 latin-1 字符再编码成 UTF-8，证书里就成了
+    「å±åç½」这种双重编码的乱码（Windows 证书管理器的「颁发给」栏
+    看到的就是它）。utf8 = yes 让 OpenSSL 按 UTF-8 读字段值。
     """
     lines = ['[ req ]', 'distinguished_name = dn', 'prompt = no',
-             'string_mask = utf8only', '', '[ dn ]']
+             'string_mask = utf8only', 'utf8 = yes', '', '[ dn ]']
     lines += [f'{k} = {v}' for k, v in fields.items()]
     if ca:
         lines += ['', '[ v3_ca ]', 'basicConstraints = critical, CA:TRUE',
@@ -526,7 +562,7 @@ def generate_ca(org_name=None, password=None):
     if not ok:
         raise RuntimeError(f'生成 CA 私钥失败：{err.strip() or "未知错误"}')
 
-    _write_subj_config(os.path.join(CA_DIR, 'qilin-ca.cnf'), {
+    _write_subj_config(CA_CNF, {
         'C': 'CN', 'ST': 'Guangdong', 'L': 'Shenzhen', 'O': org_name,
         'OU': 'Certificate Authority Department', 'CN': org_name,
         'emailAddress': 'ca@https-ssl.local',
@@ -534,7 +570,7 @@ def generate_ca(org_name=None, password=None):
     ok, _, err = _openssl([
         'req', '-x509', '-new', '-nodes', '-key', CA_KEY,
         '-sha256', '-days', '3650',
-        '-config', os.path.join(CA_DIR, 'qilin-ca.cnf'),
+        '-config', CA_CNF,
         '-extensions', 'v3_ca', '-out', CA_CRT, *passin,
     ], timeout=60)
     if not ok:
@@ -557,7 +593,7 @@ def _ca_row(ca_info):
             <td>{name}</td>
             <td>{escape(ca_info.get('valid_until', ''))}</td>
             <td>{escape(ca_info.get('created_at', ''))}</td>
-            <td><a href="{url_for('download', cert_dir='ca', filename='qilin-ca.crt')}"><i class="fas fa-download"></i> 下载CA证书</a></td>
+            <td><a href="{url_for('download', cert_dir='ca', filename=f'{CA_BASENAME}.crt')}"><i class="fas fa-download"></i> 下载CA证书</a></td>
         </tr>'''
 
 
@@ -591,7 +627,7 @@ def create_ca():
     org_name = (request.form.get('org_name') or '').strip()
     password = request.form.get('password') or None
     try:
-        for path in (CA_KEY, CA_CRT, CA_INFO_FILE, os.path.join(CA_DIR, 'qilin-ca.srl')):
+        for path in (CA_KEY, CA_CRT, CA_INFO_FILE, CA_SRL):
             if os.path.exists(path):
                 os.remove(path)
         ca_info = generate_ca(org_name, password)
@@ -605,7 +641,7 @@ def create_ca():
 @app.route('/delete_ca', methods=['POST'])
 @login_required
 def delete_ca():
-    for path in (CA_KEY, CA_CRT, CA_INFO_FILE, os.path.join(CA_DIR, 'qilin-ca.srl')):
+    for path in (CA_KEY, CA_CRT, CA_INFO_FILE, CA_SRL):
         if os.path.exists(path):
             os.remove(path)
     _sync_proxies_after_ca_change()
@@ -789,7 +825,7 @@ def download(cert_dir, filename):
 
     if cert_dir == 'ca':
         # 只放行根证书本身：CA 私钥留在宿主卷里，不经面板分发。
-        if filename != 'qilin-ca.crt':
+        if filename != f'{CA_BASENAME}.crt':
             return '该文件不可下载', 403
         root, full_path = CA_DIR, os.path.join(CA_DIR, filename)
     else:

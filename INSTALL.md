@@ -179,6 +179,13 @@ docker compose -f docker-compose.build.yml up -d --build
 > 方式 B 执行 `git pull && docker compose -f docker-compose.build.yml up -d --build`。
 > 用户表默认落在挂载出来的 `./data/users.json`，升级不会丢密码。
 
+> **关于「颁发给」里的中文：** 1.6.1 之前机构名填中文会写成双重编码的乱码，
+> 1.6.1 已修复。证书主题是签发时写死的，所以升级后要让「颁发给」变成中文，
+> 必须到面板里把 CA 和名字带中文的证书**重新创建一遍**（同名重新签发即可，
+> 反代记录仍指向同名证书）。旧证书链校验不受影响，不重建也能继续用。
+> 老版本写的 `qilin-ca.key/crt/cnf/srl` 会在容器启动时自动改名成 `https-ssl-ca.*`，
+> 数据卷里的 CA 不会丢。
+
 **3. 打开面板**
 
 浏览器访问：
@@ -214,7 +221,7 @@ docker compose up -d
 ### 1. 创建根证书（CA）
 
 主页 → 「创建」→ 填机构名称（可留空）→ 点创建。
-然后下载 `qilin-ca.crt`，装到需要访问的设备上（见下方「让设备信任 CA」）。
+然后下载 `https-ssl-ca.crt`，装到需要访问的设备上（见下方「让设备信任 CA」）。
 
 ### 2. 签发一张服务器证书
 
@@ -281,15 +288,15 @@ IP 地址：192.168.5.3
 
 ### 1. 把根证书装进电脑
 
-主页「证书下载」里点 `下载CA证书`，得到 `qilin-ca.crt`，然后：
+主页「证书下载」里点 `下载CA证书`，得到 `https-ssl-ca.crt`，然后：
 
 | 系统 | 做法 |
 |---|---|
-| Windows | `.\scripts\trust-ca-windows.ps1 -CaPath .\qilin-ca.crt`（普通权限即可，装进当前用户） |
-| Windows（全机器） | 管理员 PowerShell：`certutil -addstore -f Root .\qilin-ca.crt` |
+| Windows | `.\scripts\trust-ca-windows.ps1 -CaPath .\https-ssl-ca.crt`（普通权限即可，装进当前用户） |
+| Windows（全机器） | 管理员 PowerShell：`certutil -addstore -f Root .\https-ssl-ca.crt` |
 | Firefox | 不读 Windows 信任库，需单独处理（见下） |
 | macOS | 双击导入「钥匙串访问」→ 系统 → 该证书 → 显示简介 → 信任 → 始终信任 |
-| Linux | `sudo sh scripts/trust-ca-unix.sh ./qilin-ca.crt` |
+| Linux | `sudo sh scripts/trust-ca-unix.sh ./https-ssl-ca.crt` |
 | iOS / Android | 传到设备安装描述文件，再到设置里手动开启「完全信任」 |
 
 Windows 下不加管理员也能装进**当前用户**的受信任根，Chrome / Edge 立刻生效。
@@ -298,7 +305,7 @@ Windows 下不加管理员也能装进**当前用户**的受信任根，Chrome /
 **Firefox 有自己的信任库，不读 Windows 存储**，需要单独处理，二选一：
 
 - `about:config` → 把 `security.enterprise_roots.enabled` 设为 `true`，重启浏览器；
-- 或 设置 → 隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入 `qilin-ca.crt`，
+- 或 设置 → 隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入 `https-ssl-ca.crt`，
   勾选"信任由此 CA 标识的网站"。
 
 装完之后，凡是这张 CA 签发的证书，浏览器都不再报警告。
@@ -330,7 +337,7 @@ server {
 ```
 
 > **链要拼全**，否则部分客户端会报「证书链不完整」：
-> `cat xxx.crt qilin-ca.crt > fullchain.crt`，`ssl_certificate` 指向 `fullchain.crt`。
+> `cat xxx.crt https-ssl-ca.crt > fullchain.crt`，`ssl_certificate` 指向 `fullchain.crt`。
 > 用面板的「反向代理」功能则不用管，它会自动拼好。
 
 其它服务同理：
@@ -349,7 +356,7 @@ server {
 - 命令行自查：
 
   ```bash
-  openssl s_client -connect nas.lan:443 -CAfile qilin-ca.crt </dev/null 2>&1 \
+  openssl s_client -connect nas.lan:443 -CAfile https-ssl-ca.crt </dev/null 2>&1 \
     | grep 'Verify return code'
   ```
 
@@ -429,7 +436,7 @@ docker exec qilin_ssl python /app/scripts/smoke_test.py
 tar czf https_ssl_backup.tar.gz data .env
 ```
 
-`data/ca/qilin-ca.key` 是整个体系的根，**丢了所有已签发的证书都作废**，建议离线另存一份。
+`data/ca/https-ssl-ca.key` 是整个体系的根，**丢了所有已签发的证书都作废**，建议离线另存一份。
 
 ---
 

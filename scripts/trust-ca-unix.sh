@@ -1,10 +1,10 @@
 #!/bin/sh
 # 将 https_ssl 根 CA 安装到 Linux 或 macOS 的系统信任库。
 #
-# 用法：sudo sh scripts/trust-ca-unix.sh <qilin-ca.crt>
+# 用法：sudo sh scripts/trust-ca-unix.sh <https-ssl-ca.crt>
 set -e
 
-CA_PATH="${1:?用法: trust-ca-unix.sh <qilin-ca.crt>}"
+CA_PATH="${1:?用法: trust-ca-unix.sh <https-ssl-ca.crt>}"
 
 if [ ! -f "$CA_PATH" ]; then
     echo "找不到 CA 文件: $CA_PATH" >&2
@@ -28,11 +28,11 @@ fi
 
 if [ -d /usr/local/share/ca-certificates ]; then
     # Debian/Ubuntu
-    cp "$CA_ABS" /usr/local/share/ca-certificates/qilin-ca.crt
+    cp "$CA_ABS" /usr/local/share/ca-certificates/https-ssl-ca.crt
     update-ca-certificates
 elif [ -d /etc/pki/ca-trust/source/anchors ]; then
     # RHEL/Fedora/openSUSE
-    cp "$CA_ABS" /etc/pki/ca-trust/source/anchors/qilin-ca.crt
+    cp "$CA_ABS" /etc/pki/ca-trust/source/anchors/https-ssl-ca.crt
     update-ca-trust
 fi
 
