@@ -46,15 +46,13 @@ PROXY_CERTS_DIR = os.path.join(PROXY_DIR, 'certs')
 PROXY_LISTEN_HOST = os.environ.get('QILIN_PROXY_LISTEN_HOST', '')
 PROXY_DATA_FILE = os.path.join(PROXY_DIR, 'proxy_data.json')
 
-# 容器是否跑在 host 网络模式下（默认的 docker-compose.yml 会置 1；
-# 用 docker-compose.bridge.yml 时不置，即桥接模式）。
-# 桥接模式下端口映射在容器创建时就固定了，用户必须先在 compose 的 ports 里
-# 放行；host 模式下 nginx 监听的端口就是宿主机端口，填了即生效。
-# 两种模式下界面要给的提示完全不同，所以这里读出来传给模板。
-HOST_NETWORK = os.environ.get('QILIN_HOST_NETWORK') == '1'
+# 本项目只支持 host 网络模式（compose 里 network_mode: host）。
+# 桥接模式曾经是个选项，但那时的端口映射在容器创建时就固定了：用户在面板里
+# 填一个反代端口，容器里 nginx 明明监听得好好的，外面却连不上，非常难自查。
+# 现在 host 是唯一模式 —— 面板里填的端口就是宿主机端口，填了即生效。
 
-# 面板监听端口。host 模式（默认）下没有端口映射，Flask 直接绑宿主机端口，
-# 改端口靠这个变量；桥接模式下容器内固定 2002，由 compose 的端口映射对外暴露。
+# 面板监听端口。host 模式下没有端口映射，Flask 直接绑宿主机端口，
+# 改端口靠这个变量。
 try:
     PANEL_PORT = int(os.environ.get('QILIN_PORT') or 2002)
 except ValueError:
@@ -530,7 +528,7 @@ def verify():
 @app.route('/proxy')
 @login_required
 def proxy():
-    return render_template('proxy.html', host_network=HOST_NETWORK)
+    return render_template('proxy.html')
 
 
 @app.route('/tutorial')

@@ -87,8 +87,9 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 > 镜像已发布到 Docker Hub：`nameguoguo/https_ssl`（同时支持 amd64 / arm64），
 > 可以不克隆代码直接拉取运行。
 >
-> 默认使用 **host 网络模式**，需要 Linux。macOS / Windows 的 Docker Desktop 不支持
-> host 模式，请改用 `docker-compose.bridge.yml`（见下方「反向代理端口」）。
+> 使用 **host 网络模式，且只支持 host**，需要 Linux。macOS / Windows 的 Docker Desktop
+> 没有 host 模式，请在 Linux 虚拟机里跑；桥接模式已在 1.6.2 移除
+> （见下方「端口怎么放行」）。
 
 ### 部署步骤
 
@@ -149,34 +150,22 @@ docker compose -f docker-compose.build.yml up -d --build
 **后端自己就是 HTTPS？** 不用让面板再签一张——「证书类型」选**上传自定义证书**，
 把后端服务自己的证书和私钥传上来即可，原本地址照旧填后端的原 IP 和端口。
 
-**端口怎么放行**：默认就是 host 网络模式，**面板里填端口 → 点启用 → 结束，能访问了**，
+**端口怎么放行**：host 网络模式，**面板里填端口 → 点启用 → 结束，能访问了**，
 不用改 `docker-compose.yml`，也不用重建容器。
 
-#### 想用 bridge 模式的话
-
-macOS / Windows 的 Docker Desktop 不支持 host 模式；或者你需要容器网络隔离时，
-改用 bridge：
-
-```bash
-docker compose -f docker-compose.bridge.yml up -d
-```
-
-代价是**每加一个反向代理端口，都要多两步**：先在 `docker-compose.bridge.yml`
-的 `ports` 里声明，再 `docker compose up -d` 重建容器。
-
-```yaml
-    ports:
-      - "2002:2002"      # 管理面板
-      - "14000:14000"    # 某个反向代理服务
-```
-
-原因：bridge 模式下端口映射**在容器创建那一刻就写死了**，事后加不进去。
-
-**最容易踩的坑**：面板里填了端口，却没写进 `ports`——容器内部监听是成功的，
-但外面连不上，看起来就像「没生效」。
-
-> 不想每次都改 compose？可以在 `ports` 里**一次性放行一整段端口**
-> （如 `- "15000-15999:15000-15999"`），之后区间内的新端口就不用再重建了。
+> **为什么不做 bridge 模式**（1.6.2 起已移除）：Docker 桥接网络的端口映射在
+> **容器创建那一刻就写死了**，事后加不进去。所以在 bridge 下，面板里填的端口容器内
+> nginx 会正常监听，外面却连不上 —— 看起来就像「没生效」，排查成本很高。
+>
+> 如果你现在正好卡在这里：
+>
+> ```bash
+> ss -ltn | grep -E ':(5245|14000)'                              # 宿主机有没有在监听
+> sudo docker inspect -f '{{.HostConfig.NetworkMode}}' qilin_ssl  # 期望 host
+> ```
+>
+> 第二条输出 `bridge` 的话，用图形界面把容器网络模式改成 host 重建即可，
+> **数据卷保留就不会丢证书和反代配置**。
 
 > 两种模式的完整对比见
 > **[部署说明（Docker）→ 网络模式](./INSTALL.md#网络模式默认-host)**。
@@ -245,7 +234,7 @@ ss -lntp | grep <端口>     # 有输出就是被占了
 | `QILIN_ADMIN_PASSWORD`    | `admin`            | 首次启动创建 admin 账号用的初始密码。**只在还没有 `users.json` 时生效**，之后改这个变量不会影响已有账号 |
 | `QILIN_SECRET_KEY`        | 随机                 | 会话签名密钥。留空时每次启动随机生成，**容器重启会导致所有登录失效**，建议固定                        |
 | `QILIN_COOKIE_SECURE`     | `0`                | 置 1 时会话 Cookie 仅在 HTTPS 下发送（面板经 HTTPS 反代暴露时使用）                   |
-| `QILIN_PORT` | `2002` | 面板监听端口。**仅 host 模式（默认）有效**；bridge 模式下容器内固定 2002，改端口要动 compose 的 `ports` |
+| `QILIN_PORT` | `2002` | 面板监听端口。host 网络模式下 Flask 直接绑宿主机这个端口 |
 | `QILIN_USERS_FILE`       | `/app/users.json`  | 用户表位置。默认在容器内，**重建容器会丢**；compose 部署时指向挂载出来的 `/app/data/users.json` |
 | `TZ`                     | `UTC`              | 容器时区。证书有效期等时间戳按它显示，国内建议 `Asia/Shanghai` |
 | `QILIN_PROXY_DIR`         | `/app/proxy`       | 反向代理站点配置与证书目录                                                    |
@@ -292,15 +281,15 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
    - 确认所填服务名对应的证书已存在（证书名需与服务名一致）
    - 检查容器内 nginx 配置是否正确：`docker exec qilin_ssl nginx -t`
    - 检查宿主端口是否被别的服务占用：`ss -lntp | grep <端口>`
-   - `bridge` 模式下还要确认该端口已写进 `docker-compose.bridge.yml` 的 `ports`  
-     （`host` 模式没有这条限制）
+   - 确认容器跑在 host 网络模式（**本项目只支持 host**）：  
+     `docker inspect -f '{{.HostConfig.NetworkMode}}' qilin_ssl`
 4. **修改反向代理端口后不生效？**
    - 面板保存配置后会自动重载 nginx。若未生效，手动执行：  
      `docker exec qilin_ssl nginx -s reload`
 5. **创建反向代理后列表里没有 / 提示启动失败？**
    - 「创建」之后还要**点开关启用**才会真正监听端口，只保存不启用是不生效的
-   - `bridge` 模式下确认该端口已写进 `docker-compose.bridge.yml` 的 `ports`，  
-     否则容器内监听成功但宿主访问不到（`host` 模式无此限制）
+   - 确认容器网络模式是 host（`docker inspect -f '{{.HostConfig.NetworkMode}}' qilin_ssl`），
+     bridge 下容器内监听成功但宿主访问不到
    - 服务启动失败时面板会直接显示 nginx 的报错原文，按提示处理即可
 6. **证书验证提示"证书未覆盖地址"？**
    - 说明所填 IP/域名不在该证书的 SAN 列表中。请核对申请证书时填写的  
@@ -314,7 +303,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 ## 版本信息
 
-当前版本：v1.6.1
+当前版本：v1.6.2
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 

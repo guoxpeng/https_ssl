@@ -5,7 +5,7 @@
 # 与默认的 docker-compose.yml 只差一点：用本目录的 Dockerfile 现场构建，
 # 而不是拉 Docker Hub 上的镜像。首次构建需要几分钟。
 #
-# 网络模式同样是 host，说明见 docker-compose.yml 顶部注释。
+# 网络模式同样是 host（本项目只支持 host），说明见 docker-compose.yml 顶部注释。
 services:
   qilin-ssl:
     container_name: qilin_ssl
@@ -23,7 +23,6 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       - QILIN_PROXY_DIR=/app/proxy
       - QILIN_USERS_FILE=/app/data/users.json
-      - QILIN_HOST_NETWORK=1
       - QILIN_PORT=${QILIN_PORT:-2002}
       - QILIN_ADMIN_PASSWORD=${QILIN_ADMIN_PASSWORD:-admin}
       - QILIN_SECRET_KEY=${QILIN_SECRET_KEY:-}

@@ -2,7 +2,7 @@
 # （docker compose -f docker-compose.host.yml ...）继续可用。
 #
 # v1.4.0 时 host 模式还是可选项，必须显式指定这个文件才能启用；
-# 现在 host 已经是默认，直接 docker compose up -d 即可。本文件将来会移除，
+# 现在 host 是唯一模式，直接 docker compose up -d 即可。本文件将来会移除，
 # 新写的命令请不要再引用它。
 #
 # ⚠️ 本文件刻意保持「从源码构建」且不设 QILIN_USERS_FILE ——
@@ -12,8 +12,7 @@
 #
 # 说明：host 网络模式下容器直接使用宿主机网络，nginx 监听的端口就是宿主机端口，
 #       面板里新增反向代理时端口填了即生效，不用改 compose、也不用重建容器。
-#       代价是失去网络隔离，且仅 Linux 支持（Docker Desktop 请用
-#       docker-compose.bridge.yml）。
+#       代价是失去网络隔离，且仅 Linux 支持。
 services:
   qilin-ssl:
     container_name: qilin_ssl
@@ -26,8 +25,6 @@ services:
       - ./data/proxy:/app/proxy                 # 反向代理配置与证书
     environment:
       - QILIN_PROXY_DIR=/app/proxy
-      # 告诉面板当前是 host 模式，界面上的端口提示会相应变化
-      - QILIN_HOST_NETWORK=1
       # host 模式没有端口映射，面板端口由这里决定（默认 2002）。
       # 想换端口：在 .env 里写 QILIN_PORT=你的端口
       - QILIN_PORT=${QILIN_PORT:-2002}

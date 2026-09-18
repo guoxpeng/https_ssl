@@ -34,9 +34,12 @@
 
 ## 快速开始
 
-> 默认使用 **host 网络模式**（仅 Linux），反向代理端口**填了即生效**，
-> 不用改配置也不用重建容器。macOS / Windows 的 Docker Desktop 不支持 host 模式，
-> 请见 GitHub 上的 `docker-compose.bridge.yml`。
+> 使用 **host 网络模式，且只支持 host**（仅 Linux），反向代理端口**填了即生效**，
+> 不用改配置也不用重建容器。macOS / Windows 的 Docker Desktop 没有 host 模式，
+> 请在 Linux 虚拟机里跑。
+>
+> 桥接模式已在 1.6.2 移除：它要把端口先写进 `ports` 再重建容器，否则容器里
+> nginx 在监听、外面却连不上，非常容易踩坑。
 
 ### 方式一：一行命令（推荐）
 
@@ -89,7 +92,6 @@ docker run -d --name qilin_ssl \
 | `QILIN_COOKIE_SECURE` | `0` | 面板经 HTTPS 暴露时置 `1`，会话 Cookie 仅在 HTTPS 下发送 |
 | `QILIN_USERS_FILE` | `/app/users.json` | 用户表位置。建议指向数据卷，重建容器不会丢密码 |
 | `QILIN_PROXY_DIR` | `/app/proxy` | 反向代理配置与证书目录 |
-| `QILIN_HOST_NETWORK` | 空 | 置 `1` 表示当前是 host 模式，界面提示会相应变化 |
 | `TZ` | `UTC` | 时区。证书有效期等时间戳按它显示，国内建议 `Asia/Shanghai` |
 
 ---

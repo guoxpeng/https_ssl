@@ -83,9 +83,9 @@ with far fewer privileges.
 - Docker Engine 20.10+ and Docker Compose v2
 - The host does **not** need Python, OpenSSL or nginx — they are all inside the image
 
-> The default is **host networking**, which requires Linux. Docker Desktop on macOS / Windows
-> does not support host mode — use `docker-compose.bridge.yml` instead (see
-> "Networking: host by default" below).
+> It uses **host networking, and only host**, which requires Linux. Docker Desktop on
+> macOS / Windows has no host mode — run it inside a Linux VM. Bridge mode was removed
+> in 1.6.2 (see "Networking: host only" below).
 
 ## Quick start (Docker)
 
@@ -106,8 +106,6 @@ It installs into `./https_ssl` by default. Override with environment variables:
 | `IMAGE` | `nameguoguo/https_ssl:latest` | Image to run. Point it at a mirror to avoid slow Docker Hub access, or set `IMAGE=build` to clone and build from source instead |
 | `INSTALL_DIR` | `<cwd>/https_ssl` | Where to install |
 | `PANEL_PORT` | `2002` | Panel port |
-| `NETWORK` | `host` | `host` (default) or `bridge`. **In `host` mode a reverse-proxy port works the moment you enter it** — no compose edit, no container rebuild. `bridge` uses `docker-compose.bridge.yml` and needs the port in `ports` plus a rebuild |
-| `PROXY_PORT` | `14000` | Example reverse-proxy port. `bridge` mode only |
 | `ADMIN_PASSWORD` | `admin` | Initial admin password — change it in Settings after logging in |
 | `REPO` | this repo | Source repository |
 | `SUDO` | auto | `1` forces sudo, `0` forbids it |
@@ -124,41 +122,37 @@ INSTALL_DIR=/vol1/docker/https_ssl PANEL_PORT=2002 \
 > If your account is not in the `docker` group (the `admin` user on Feiniu NAS is not),
 > run `sudo -v` once beforehand, or use `curl -fsSL <url> | sudo bash`.
 
-### Networking: host by default
+### Networking: host only
 
-**The default is `host` mode**, so: **enter the port in the panel → toggle it on → done.**
+**Only `host` mode is supported**, so: **enter the port in the panel → toggle it on → done.**
 No compose edit, no container rebuild.
 
-| | `host` (default) | `bridge` (alternative) |
-|---|---|---|
-| Adding a reverse-proxy port | enter port → toggle on → **done** | enter port → toggle on → **edit `ports` → rebuild** → then it works |
-| Network isolation | none (shares the host network stack) | yes |
-| Platforms | **Linux only** | all, incl. Docker Desktop on Mac / Windows |
-| Port already used on the host | only that one site fails to load | container fails to start |
+Earlier versions offered a `bridge` alternative; it was **removed in 1.6.2** because it is
+far too easy to get wrong: Docker bakes a bridge container's port mapping in **at creation
+time**, so every new reverse-proxy port needs a `ports` edit plus a rebuild. Otherwise
+nginx listens happily inside the container (`curl` works from inside) while the LAN gets
+"connection refused" — which looks like a certificate or panel bug.
 
-Why: in `bridge` mode the port mapping is **baked in when the container is created** and
-cannot be added later. `host` mode has no such mapping — whatever port nginx listens on is
-what the outside can reach.
+Trade-offs of host mode:
 
-**When you actually need `bridge`:**
+| | Notes |
+|---|---|
+| Network isolation | none — the container shares the host network stack |
+| Platforms | **Linux only**. Docker Desktop on macOS / Windows has no host mode; use a Linux VM |
+| Port already used on the host | only that one site fails to load; running sites are unaffected |
 
-1. Docker Desktop on macOS / Windows — host mode is not supported there;
-2. you want to keep the container's network isolation.
+> The panel port comes from `QILIN_PORT` in `.env` (default 2002); there is no port mapping.
 
-Switching to `bridge`:
+**A proxy port unreachable from outside?** These two commands usually find it:
 
 ```bash
-# one-liner install
-NETWORK=bridge INSTALL_DIR=/vol1/docker/https_ssl bash install.sh
-
-# switch an existing install
-cd /vol1/docker/https_ssl
-sudo docker compose down
-sudo docker compose -f docker-compose.bridge.yml up -d
+ss -ltn | grep -E ':(5245|14000)'                                 # is the host listening at all?
+sudo docker inspect -f '{{.HostConfig.NetworkMode}}' qilin_ssl    # expect: host
 ```
 
-> In `bridge` mode `PANEL_PORT` / `PROXY_PORT` work through the compose `ports` mapping.
-> In `host` mode there is no mapping — the panel port comes from `QILIN_PORT` in `.env`.
+If the second one prints `bridge` (easy to pick by accident in a NAS/GUI Docker manager),
+the container is off the supported path: nginx listens, but nothing is published. Recreate
+it with host networking and **keep the data volumes** — certificates and proxy config survive.
 
 If you prefer to read the script before running it:
 
@@ -234,10 +228,9 @@ exists, changing `.env` has no effect — use the Settings page instead.
    contain that IP. The original address can point at any device (e.g.
    `http://192.168.5.5:5244`).
 
-   The default `host` mode needs nothing else — the port works as soon as you enter it.
-   (In `bridge` mode, add the port to `docker-compose.bridge.yml` and run
-   `docker compose -f docker-compose.bridge.yml up -d` first.) Then in the Reverse Proxy
-   page fill in the original address, the new HTTPS address and pick a certificate.
+   The `host` mode needs nothing else — the port works as soon as you enter it.
+   Then in the Reverse Proxy page fill in the original address, the new HTTPS address
+   and pick a certificate.
    **If the backend already speaks HTTPS**, choose "upload a custom certificate" and upload
    that service's own certificate and key — no need to issue a new one.
 
@@ -415,11 +408,10 @@ certificate you ever issued becomes invalid**. Keep an offline copy.
    docker restart qilin_ssl     # USERS is read at startup — copying alone is not enough
    ```
 
-2. **Proxy ports must be declared first (`bridge` mode only).** In `bridge` mode a proxy
-   port that is not listed under `ports` in `docker-compose.bridge.yml` is unreachable from
-   the host. The default `host` mode has no such requirement — the port works as soon as you
-   enter it. In both modes, creating a proxy only saves it; you must also toggle it on to
-   make it listen.
+2. **Proxy port unreachable from outside.** Only `host` networking is supported, so there
+   is no "declare the port first" step. Verify the container was not switched to bridge:
+   `docker inspect -f '{{.HostConfig.NetworkMode}}' qilin_ssl` should print `host`.
+   Also note that creating a proxy only saves it — you must toggle it on to make it listen.
 
 3. **Frequent logouts.** `QILIN_SECRET_KEY` is unset, so the session key changes on
    every restart. Pin it: `echo "QILIN_SECRET_KEY=$(openssl rand -hex 32)" >> .env`
@@ -431,9 +423,8 @@ certificate you ever issued becomes invalid**. Keep an offline copy.
    the warning is expected (`https://<server-ip>:2002` will not connect at all — the
    panel does not speak TLS). To serve the panel over HTTPS too:
 
-   1. **skip this step in the default `host` mode** — the port works as soon as you enter
-      it. In `bridge` mode, add a port in `docker-compose.bridge.yml`
-      (e.g. `- "12002:12002"`) and run `docker compose -f docker-compose.bridge.yml up -d`;
+   1. pick a free port on the host — no compose edit needed, the port takes effect
+      immediately;
    2. in the panel's Reverse Proxy page add a service with original address
       `http://<server-ip>:2002` and new address `https://<server-ip>:12002`, picking a
       certificate whose SAN covers that IP;

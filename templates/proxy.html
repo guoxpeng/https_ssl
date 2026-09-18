@@ -36,27 +36,17 @@
             <h2>反向代理</h2>
         </div>
 
-        {% if host_network %}
         <div class="form-hint ok">
-            <strong>当前是 host 网络模式，端口填了即生效。</strong>
+            <strong>本项目跑在 host 网络模式，端口填了即生效。</strong>
             不需要改 <code>docker-compose.yml</code>，也不用重建容器。
             「反代后地址」请填<strong>浏览器实际访问的地址</strong>——也就是本机的 IP，
             不是后端服务所在的那台机器。
-        </div>
-        {% else %}
-        <div class="form-hint warn">
-            <strong>新增之前要先放行端口。</strong>
-            容器看不到宿主机的端口映射，所以「反代后地址」里的端口必须先在
-            <code>docker-compose.bridge.yml</code> 的 <code>ports</code> 里声明，
-            再执行 <code>docker compose -f docker-compose.bridge.yml up -d</code>
-            重建容器，否则外部连不上。
-            嫌麻烦可以改用默认的 <code>docker-compose.yml</code>（host 网络模式），
-            之后端口就是填了即生效。
             <br>
-            「反代后地址」请填<strong>浏览器实际访问的地址</strong>——也就是本机的 IP，
-            不是后端服务所在的那台机器。
+            如果填完端口外部仍然连不上，多半是容器没跑在 host 模式
+            （比如用图形化面板建容器时选了 bridge）：
+            容器里 nginx 在监听，但端口没映射到宿主机。
+            重建容器时网络模式选 <code>host</code> 即可，数据卷保留不会丢证书。
         </div>
-        {% endif %}
 
         <div class="card">
             <div class="card-actions">
@@ -104,19 +94,10 @@
                 <div class="form-group">
                     <label for="proxy_url">反代后地址:</label>
                     <input type="text" id="proxy_url" name="proxy_url" placeholder="例如: https://192.168.1.10:14000" required>
-                    {% if host_network %}
                     <div class="form-hint">
                         端口填了即生效。主机名请填本机 IP —— 也就是浏览器要访问的地址，
                         不是后端服务所在机器的 IP。
                     </div>
-                    {% else %}
-                    <div class="form-hint">
-                        这里的端口要先在 <code>docker-compose.bridge.yml</code> 的 <code>ports</code>
-                        里放行，并执行 <code>docker compose -f docker-compose.bridge.yml up -d</code>
-                        重建容器才对外可用。
-                        主机名请填本机 IP，不是后端服务所在机器的 IP。
-                    </div>
-                    {% endif %}
                 </div>
                 <div class="form-group">
                     <label>证书类型：</label>

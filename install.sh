@@ -17,13 +17,11 @@
 #                     置为 build 则直接克隆仓库、从源码构建（需要 git，耗时几分钟）。
 #   INSTALL_DIR     安装目录，默认 <当前目录>/https_ssl
 #   PANEL_PORT      面板端口，默认 2002
-#   NETWORK         网络模式，默认 host
-#                     host   = 反向代理端口填了即生效，不用改 compose 也不用重建容器；
-#                              仅 Linux 可用。
-#                     bridge = 端口要先在 ports 里声明再重建容器；
-#                              macOS / Windows 的 Docker Desktop 用这个。
-#   PROXY_PORT      示例反向代理端口，默认 14000（仅 bridge 模式有效）
 #   ADMIN_PASSWORD  管理员初始密码，默认 admin
+#
+# 网络模式固定为 host（仅 Linux 可用）：反向代理端口填了即生效，不用改 compose，
+# 也不用重建容器。桥接模式已经移除 —— 它要把端口先写进 ports 再重建容器，
+# 用户常在“面板里填了、外面却连不上”上卡住。
 #   REPO            代码仓库地址（下载 compose 文件、或源码构建时用）
 #   BRANCH          分支，默认 main
 #   SUDO            留空自动判断；置 1 强制用 sudo，置 0 强制不用
@@ -38,8 +36,6 @@ REPO=${REPO:-https://github.com/guoxpeng/https_ssl.git}
 BRANCH=${BRANCH:-main}
 INSTALL_DIR=${INSTALL_DIR:-$PWD/https_ssl}
 PANEL_PORT=${PANEL_PORT:-2002}
-PROXY_PORT=${PROXY_PORT:-14000}
-NETWORK=${NETWORK:-host}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 IMAGE=${IMAGE:-nameguoguo/https_ssl:latest}
 
@@ -49,20 +45,12 @@ case "$IMAGE" in
     *)                              BUILD_MODE=0 ;;
 esac
 
-case "$NETWORK" in
-    host)   BRIDGE=0 ;;
-    bridge) BRIDGE=1 ;;
-    *)      die "NETWORK 只能是 host 或 bridge，收到：$NETWORK" ;;
-esac
-
 # 选 compose 文件：
-#   host   + 镜像 -> 用仓库默认的 docker-compose.yml（不带 -f）
-#   host   + 源码 -> docker-compose.build.yml
-#   bridge + 任意 -> docker-compose.bridge.yml
+#   镜像安装 -> 用仓库默认的 docker-compose.yml（不带 -f）
+#   源码构建 -> docker-compose.build.yml
+# 两个文件都是 host 网络模式。
 pick_compose() {
-    if [ "$BRIDGE" = '1' ]; then
-        COMPOSE_FILE='docker-compose.bridge.yml'
-    elif [ "$BUILD_MODE" = '1' ]; then
+    if [ "$BUILD_MODE" = '1' ]; then
         COMPOSE_FILE='docker-compose.build.yml'
     else
         COMPOSE_FILE=''
@@ -168,16 +156,10 @@ cd "$INSTALL_DIR"
 
 [ -f "$COMPOSE_LABEL" ] || die "目录里没有 $COMPOSE_LABEL，请确认文件完整"
 
-# bridge 文件默认用镜像跑；要求源码构建时把注释里的 build 打开、去掉 image 行
-if [ "$BUILD_MODE" = '1' ] && [ "$BRIDGE" = '1' ]; then
-    sed -i 's|^    # build: \.$|    build: .|' "$COMPOSE_FILE"
-    sed -i '/^    image: \${QILIN_IMAGE/d' "$COMPOSE_FILE"
-fi
-
 if [ "$BUILD_MODE" = '1' ]; then
-    info "网络模式：$NETWORK（$COMPOSE_LABEL，从源码构建）"
+    info "网络模式：host（$COMPOSE_LABEL，从源码构建）"
 else
-    info "网络模式：$NETWORK（$COMPOSE_LABEL，使用镜像 $IMAGE）"
+    info "网络模式：host（$COMPOSE_LABEL，使用镜像 $IMAGE）"
 fi
 
 # 后面所有 compose 命令都带上 -f，打印给用户的命令也保持一致
@@ -197,8 +179,7 @@ else
 QILIN_ADMIN_PASSWORD=$ADMIN_PASSWORD
 QILIN_SECRET_KEY=$SECRET
 QILIN_COOKIE_SECURE=0
-# 面板端口。host 模式（默认）下 Flask 直接绑这个端口；
-# bridge 模式下容器内固定 2002，这个值不生效，改端口要动 compose 的 ports。
+# 面板端口。host 模式下 Flask 直接绑宿主机这个端口。
 QILIN_PORT=$PANEL_PORT
 EOF
     if [ "$BUILD_MODE" = '0' ]; then
@@ -207,24 +188,9 @@ EOF
     chmod 600 .env
 fi
 
-# ---------------------------------------------------------------- 5. 端口改写
-# 只有 bridge 模式需要改 compose 的端口映射：host 模式下没有 ports 段，
-# 端口由 nginx 直接绑在宿主机上，面板端口走 .env 的 QILIN_PORT。
-if [ "$BRIDGE" = '1' ]; then
-    if [ "$PANEL_PORT" != '2002' ]; then
-        info "面板端口改为 $PANEL_PORT"
-        sed -i "s|\"2002:2002\"|\"$PANEL_PORT:2002\"|" "$COMPOSE_FILE"
-    fi
-
-    # 示例反向代理端口同理。仓库自带的 14000 只是个占位示例，
-    # 同一台机器上装第二个实例、或 14000 已被别的服务占用时会撞车。
-    if [ "$PROXY_PORT" != '14000' ]; then
-        info "示例反代端口改为 $PROXY_PORT"
-        sed -i "s|\"14000:14000\"|\"$PROXY_PORT:14000\"|" "$COMPOSE_FILE"
-    fi
-fi
-
-# ---------------------------------------------------------------- 6. 启动
+# ---------------------------------------------------------------- 5. 启动
+# host 模式下 compose 里没有 ports 段：端口由 nginx 直接绑宿主机，
+# 面板端口走 .env 的 QILIN_PORT，反代端口在面板里填了即生效。
 if [ "$BUILD_MODE" = '1' ]; then
     info '正在构建并启动容器（首次构建需要几分钟）...'
     START_CMD="$DC up -d --build"
@@ -235,17 +201,10 @@ fi
 
 if ! $START_CMD; then
     warn ''
-    if [ "$BRIDGE" = '0' ]; then
-        warn '启动失败。host 模式下容器与宿主机共用网络，最常见的原因是面板端口被占用：'
-        warn "  面板端口 $PANEL_PORT"
-        warn '换一个端口重跑即可，代码和 .env 都不会丢：'
-        warn "  PANEL_PORT=2010 INSTALL_DIR=$INSTALL_DIR bash install.sh"
-    else
-        warn '启动失败。最常见的原因是端口已被占用：'
-        warn "  面板端口 $PANEL_PORT、示例反代端口 $PROXY_PORT"
-        warn '换一组端口重跑即可，代码和 .env 都不会丢：'
-        warn "  PANEL_PORT=2010 PROXY_PORT=14010 INSTALL_DIR=$INSTALL_DIR bash install.sh"
-    fi
+    warn '启动失败。host 模式下容器与宿主机共用网络，最常见的原因是面板端口被占用：'
+    warn "  面板端口 $PANEL_PORT"
+    warn '换一个端口重跑即可，代码和 .env 都不会丢：'
+    warn "  PANEL_PORT=2010 INSTALL_DIR=$INSTALL_DIR bash install.sh"
     warn ''
     warn "也可以先看日志：cd $INSTALL_DIR && $DC logs"
     exit 1
@@ -290,23 +249,13 @@ cat <<EOF
   提示：
 EOF
 
-if [ "$BRIDGE" = '0' ]; then
-    cat <<EOF
-    - 当前是 host 网络模式（默认）：反向代理端口填了即生效，不用改 compose、
-      也不用重建容器。
+cat <<EOF
+    - 网络模式固定为 host：反向代理端口填了即生效，不用改 compose、也不用重建容器。
+    - 如果反代端口从外面访问不到，检查容器是不是被改成了 bridge 网络
+      （图形化面板建容器时容易选错），把网络模式改回 host 即可。
     - 想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
 
 EOF
-else
-    cat <<EOF
-    - 当前是 bridge 网络模式：反向代理端口要先在 $COMPOSE_LABEL 的 ports 里声明
-      （已预留 $PROXY_PORT），加完执行 $DC up -d 生效。
-    - Linux 上建议改用默认的 host 模式，反向代理端口填了即生效：
-      $DC down && $SUDO $COMPOSE up -d
-    - 想给面板也配上 HTTPS，见 INSTALL.md 的「让面板自己也走 HTTPS」。
-
-EOF
-fi
 
 if [ "$BUILD_MODE" = '1' ]; then
     cat <<EOF

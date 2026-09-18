@@ -306,6 +306,9 @@ def run(workdir):
     check('verify.html 含证书下拉', 'id="cert-list"' in verify_html and 'id="cert-files"' in verify_html)
     check('verify.html 结果区可展示明细', 'id="verify-details"' in verify_html)
     check('verify.html 不再打开假链接', 'window.open' not in verify_html)
+    # 曾经 host / bridge 两种模式各有一套提示，靠环境变量开关；bridge 已彻底移除，
+    # 提示必须无条件出现，否则用户会以为端口不用放行。
+    check('proxy 页始终提示“端口填了即生效”', '端口填了即生效' in proxy_html)
     check('首页不再引用 file_upload.js',
           'file_upload.js' not in client.get('/').get_data(as_text=True))
 
