@@ -57,6 +57,46 @@ def prepare_workspace():
     return workdir
 
 
+def ensure_usable_nginx(workdir):
+    """尽力让 PATH 里的 nginx 变得「可用」，返回是否可用。
+
+    冒烟测试要覆盖「nginx 可用 → 在面板上启用服务成功」这条路径，但各环境的
+    差异很大，不处理就会让结果随环境漂移：
+
+      · 开发机（Windows）通常根本没装 nginx；
+      · CI runner 装了 nginx，但它的系统配置未必能用 —— 实测 GitHub 的
+        ubuntu runner 上 `nginx -t` 会因 /run/nginx.pid 权限不足直接失败；
+      · 容器里 nginx 配置正常，`nginx -t` 通过。
+
+    所以先探一次真 nginx：`-t` 能过就照常用它（容器内就是这种情况）；
+    过不了就在 POSIX 上往 PATH 最前面放一个恒成功的假 nginx，把行为钉死。
+
+    Windows 上做不到这一点：subprocess 走 CreateProcess，它只会补 `.exe`，
+    既认不出 `nginx.cmd`（PATHEXT 是 cmd.exe 的规则），也没法凭空造一个 exe。
+    所以 Windows 且没装 nginx 时如实返回 False，让调用方走「报错」分支。
+    """
+    real = shutil.which('nginx')
+    if real:
+        try:
+            if subprocess.run([real, '-t'], capture_output=True,
+                              timeout=20).returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    if os.name == 'nt':
+        return False
+
+    bindir = os.path.join(workdir, 'fakebin')
+    os.makedirs(bindir, exist_ok=True)
+    fake = os.path.join(bindir, 'nginx')
+    with open(fake, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('#!/bin/sh\n# 冒烟测试用的假 nginx：-t / -s reload / 启动 一律成功\nexit 0\n')
+    os.chmod(fake, 0o755)
+    os.environ['PATH'] = bindir + os.pathsep + os.environ.get('PATH', '')
+    return True
+
+
 def self_signed_pair(workdir, openssl_cmd, name='external'):
     """生成一对与 https_ssl CA 无关的自签证书，用于测试自定义证书分支。"""
     crt = os.path.join(workdir, f'{name}.crt')
@@ -233,21 +273,25 @@ def run(workdir):
     check('编辑后只有一条记录', len(proxies) == 1, str(len(proxies)))
     conf = open(os.path.join(qilin.PROXY_SITES_DIR, 'nas-panel.conf'), encoding='utf-8').read()
     check('站点配置已更新端口', 'listen 14001 ssl;' in conf)
-    # 开发机通常没有 nginx，容器内则有：两种环境下都要给出确定行为，
-    # 不能把「本机没装 nginx」写死成预期结果。
-    nginx_present = bool(shutil.which('nginx')) or qilin._nginx_running()
+    # 开发机通常没有 nginx，CI runner 装了却未必可用，容器里则正常：
+    # 先尽力把「可用」这件事钉死（必要时塞一个恒成功的假 nginx），
+    # 这样预期就不必随环境漂移。
+    nginx_usable = ensure_usable_nginx(workdir)
     r = client.post('/run_proxy', json={'proxy_id': 'nas-panel'})
     body = r.get_json() or {}
-    if nginx_present:
-        check('run_proxy 在装有 nginx 的环境下启用成功',
+    if nginx_usable:
+        check('run_proxy 在 nginx 可用时启用成功',
               r.status_code == 200 and body.get('success') is True, str(body))
     else:
-        check('run_proxy 在无 nginx 时返回明确错误',
+        check('run_proxy 在 nginx 不可用时返回明确错误',
               r.status_code == 500 and 'nginx' in body.get('message', ''), str(body))
     r = client.get('/get_proxy_pid/nas-panel')
-    want = 'on' if nginx_present else 'off'
-    check('状态查询可用', r.status_code == 200 and r.get_json()['status'] == want,
-          str(r.get_json()))
+    # 运行状态取自 /proc 里的 nginx 进程扫描，不是「nginx 命令能不能跑」：
+    # 只有容器里真的常驻着 nginx 时才会是 on。
+    want = 'on' if qilin._nginx_running() else 'off'
+    check('状态查询与真实 nginx 进程一致',
+          r.status_code == 200 and r.get_json()['status'] == want,
+          str(r.get_json()) + f'（期望 {want}）')
 
     print('\n[11] 删除证书的联动')
     r = client.post('/delete_certs', json={'cert_names': ['我的证书']})
