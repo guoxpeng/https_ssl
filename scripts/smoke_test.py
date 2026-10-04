@@ -383,7 +383,8 @@ def check_legacy_ca_migration(openssl_cmd, admin_password):
     env = dict(os.environ)
     env.update(QILIN_OPENSSL=openssl_cmd, QILIN_ADMIN_PASSWORD=admin_password,
                QILIN_SECRET_KEY='smoke-test-key',
-               QILIN_PROXY_DIR=os.path.join(workdir, 'proxy'))
+               QILIN_PROXY_DIR=os.path.join(workdir, 'proxy'),
+               QILIN_USERS_FILE=os.path.join(workdir, 'users.json'))
     subprocess.run([sys.executable, '-c', 'import app'], cwd=workdir, env=env,
                    capture_output=True)
     check('启动时把 qilin-ca.* 改名为 https-ssl-ca.*',
@@ -398,11 +399,19 @@ def main():
         print('未找到 openssl，请设置 QILIN_OPENSSL 环境变量后重试')
         return 1
     workdir = prepare_workspace()
+    # 用户表必须钉在临时目录里：在容器内跑时环境里带着生产的
+    # QILIN_USERS_FILE=/app/data/users.json，不覆盖就会读到、甚至写到生产数据
+    # （症状是登录用测试密码登不进去，随后 /get_certs 返回 302，脚本以 TypeError 崩掉）。
+    # 同理清掉 QILIN_PROXY_LISTEN_HOST（会改变生成的 nginx 配置）与
+    # QILIN_COOKIE_SECURE（=1 时 http 下拿不到会话 cookie）。
+    for stale in ('QILIN_PROXY_LISTEN_HOST', 'QILIN_COOKIE_SECURE'):
+        os.environ.pop(stale, None)
     os.environ.update(
         QILIN_OPENSSL=openssl_cmd,
         QILIN_ADMIN_PASSWORD=ADMIN_PASSWORD,
         QILIN_SECRET_KEY='smoke-test-key',
         QILIN_PROXY_DIR=os.path.join(workdir, 'proxy'),
+        QILIN_USERS_FILE=os.path.join(workdir, 'users.json'),
     )
     print(f'openssl : {openssl_cmd}')
     print(f'workdir : {workdir}')
