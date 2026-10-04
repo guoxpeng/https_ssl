@@ -2,6 +2,28 @@
 
 本文件记录本项目的所有重要变更。
 
+## [1.7.0] - 2026-10-04
+
+### 新增
+
+- **反向代理站点支持 `http://` 自动跳 `https://`。**
+
+  以前在浏览器里输入 `192.168.5.3:14000`（不写协议头），浏览器会补成
+  `http://`，明文请求打到 TLS 端口上，nginx 直接回
+  400「The plain HTTP request was sent to HTTPS port」，看着像服务挂了。
+  现在面板生成的每个 HTTPS 站点都带一条：
+
+  ```nginx
+  error_page 497 =301 https://$host:$server_port$request_uri;
+  ```
+
+  这种请求会被 301 跳到 HTTPS，**路径与查询参数原样保留**。只影响本面板管理的
+  站点；fnOS 自带的 443 / 5667 由 fnOS 的 nginx 提供，不受影响。
+
+  顺带记一笔：不能用「同一个端口再监听一个明文 server 块」来跳转 ——
+  nginx 会把整个端口当成 TLS，要求该端口上每个 server 块都配 `ssl_certificate`，
+  实测直接 `nginx -t` 失败。
+
 ## [1.6.3] - 2026-09-18
 
 ### 文档

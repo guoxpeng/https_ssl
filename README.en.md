@@ -50,6 +50,7 @@ and Debian 12).
 ### 4. HTTPS reverse proxy
 - Put HTTPS in front of an existing HTTP service (e.g. `http://192.168.5.3:4000`)
 - Pick a certificate in the panel — no hand-written nginx config
+- Forgetting the `https://` prefix still lands on HTTPS (no 400 dead end)
 - Multi-site support, hot reload on change, start/stop per service without touching others
 
 ## Architecture
@@ -237,6 +238,20 @@ exists, changing `.env` has no effect — use the Settings page instead.
    **Saving is not enabling** — the "create" step only stores the service, the port is not
    listening yet. You must also toggle it on in the list, which is what generates the nginx
    site and hot-reloads it. **No container restart needed.**
+
+#### Typing `192.168.5.3:14000` without `https://` no longer gives a 400
+
+The browser fills in `http://`, so a plaintext request hits a TLS port. By default nginx
+answers 400 "The plain HTTP request was sent to HTTPS port", which looks like the service
+is broken. Every HTTPS site this panel generates now carries:
+
+```nginx
+error_page 497 =301 https://$host:$server_port$request_uri;
+```
+
+so such requests are 301-redirected to HTTPS, **with path and query string preserved**.
+This only applies to sites managed by this panel — fnOS's own 443 / 5667 belong to fnOS's
+nginx and are unaffected.
 
 ### Making devices trust the CA
 

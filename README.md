@@ -48,6 +48,7 @@ https_ssl 是一个基于 Flask 和 OpenSSL 开发的自签证书管理系统，
 
 - 基于已签发证书配置 HTTPS 反向代理
 - 将 HTTP 服务转换为 HTTPS 服务
+- 访问时忘记写 `https://` 也会自动跳到 HTTPS（不会停在 400）
 - 支持多服务、多站点配置，配置变更热加载
 - 管理反向代理服务的启动和停止
 
@@ -218,6 +219,25 @@ ss -lntp | grep <端口>     # 有输出就是被占了
 
 配置变更会通过 `nginx -s reload` 热加载，不影响其他已启用服务。
 
+#### 忘写 `https://` 也不会报 400
+
+浏览器把「`192.168.5.3:14000`」补全成 `http://192.168.5.3:14000` 时，明文请求会打到
+TLS 端口上。nginx 默认对这种情况回 400「The plain HTTP request was sent to HTTPS
+port」，看着像服务坏了。
+
+面板生成的每个 HTTPS 站点都带一条
+
+```nginx
+error_page 497 =301 https://$host:$server_port$request_uri;
+```
+
+把这种请求 301 跳到 HTTPS，路径与查询参数原样保留 ——
+`http://192.168.5.3:14000/login?next=%2F` 会跳到 `https://192.168.5.3:14000/login?next=%2F`。
+所以直接输入 `192.168.5.3:14000` 就能进，不必手打协议头。
+
+> 只对本面板管理的 HTTPS 站点生效。fnOS 自带的管理界面（443 / 5667）由 fnOS 的
+> nginx 提供，不受这里影响。
+
 ### 验证证书
 
 1. 点击侧边栏的「证书验证」菜单
@@ -316,7 +336,7 @@ docker exec -e QILIN_PASS='你的密码' qilin_ssl bash /app/_verify_proxy.sh
 
 ## 版本信息
 
-当前版本：v1.6.3
+当前版本：v1.7.0
 
 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 

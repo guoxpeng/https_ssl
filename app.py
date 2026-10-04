@@ -1155,10 +1155,18 @@ def _write_site_conf(proxy):
 
     ssl_block = ''
     if scheme == 'https':
+        # 浏览器把「192.168.5.3:12002」补成 http:// 时会打到 TLS 端口上，nginx 以
+        # 497（对客户端显示为 400「The plain HTTP request was sent to HTTPS port」）
+        # 拒绝。把 497 改写成 301，用户就不用自己补 https:// 了，路径也原样带过去。
+        #
+        # 为什么不用「同端口再监听一个明文 server 块」：nginx 会把整个端口当成 TLS，
+        # 要求该端口上每个 server 块都配 ssl_certificate，直接 nginx -t 失败
+        # （实测报 no "ssl_certificate" is defined for the "listen ... ssl" directive）。
         ssl_block = (f'    ssl_certificate     {PROXY_CERTS_DIR}/{service_name}.crt;\n'
                      f'    ssl_certificate_key {PROXY_CERTS_DIR}/{service_name}.key;\n'
                      '    ssl_protocols TLSv1.2 TLSv1.3;\n'
-                     '    ssl_prefer_server_ciphers off;\n\n')
+                     '    ssl_prefer_server_ciphers off;\n'
+                     '    error_page 497 =301 https://$host:$server_port$request_uri;\n\n')
 
     conf = f'''server {{
     {listen}

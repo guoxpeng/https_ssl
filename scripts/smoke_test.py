@@ -353,6 +353,24 @@ def run(workdir):
         if saved is not None:
             os.environ['QILIN_ADMIN_PASSWORD'] = saved
 
+    print('\n[17] HTTPS 站点把明文请求 301 跳到 HTTPS')
+    # 浏览器把「host:port」补成 http:// 时会打到 TLS 端口上，nginx 以 497 拒绝
+    # （客户端看到 400 The plain HTTP request was sent to HTTPS port）。
+    # 生成的站点必须带 error_page 497 把它改写成 301。
+    redirect = 'error_page 497 =301 https://$host:$server_port$request_uri;'
+    for name, url in (('https-497', 'https://192.168.5.3:14443'),
+                      ('http-497', 'http://192.168.5.3:14080')):
+        qilin._write_site_conf({'id': name, 'original_url': 'http://127.0.0.1:8080/',
+                                'proxy_url': url})
+        conf = open(os.path.join(qilin.PROXY_SITES_DIR, f'{name}.conf'),
+                    encoding='utf-8').read()
+        if url.startswith('https'):
+            check('HTTPS 站点带 error_page 497', redirect in conf, conf)
+            check('HTTPS 站点仍带 ssl_certificate', 'ssl_certificate' in conf, conf)
+        else:
+            check('HTTP 站点不带 error_page 497', redirect not in conf, conf)
+            check('HTTP 站点不写 ssl_certificate', 'ssl_certificate' not in conf, conf)
+
 
 def check_legacy_ca_migration(openssl_cmd, admin_password):
     """旧版本用 qilin-ca.* 命名，升级复用数据卷时必须自动认领。"""
