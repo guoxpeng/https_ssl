@@ -203,6 +203,33 @@ def _write_json(path, payload):
     os.replace(tmp, path)
 
 
+def _write_text_atomic(path, text, mode=None):
+    """原子写文本：先写同目录的临时文件，再 os.replace 覆盖目标。
+
+    为什么站点配置和证书也必须原子写：它们是「容器启动时会被 nginx -t
+    整份一起校验」的文件。直接 open(..., 'w') 会先截断再写，进程在中途被打断
+    （容器被 kill、磁盘写满、宿主机断电）就会留下一个半截的 .conf 或 .crt，
+    于是下次启动 nginx -t 直接失败。写坏一个文件、整台面板起不来，代价太大。
+
+    临时文件用 pid 做后缀，避免同一文件被并发写时互相踩。
+    """
+    tmp = f'{path}.tmp-{os.getpid()}'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(text)
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        # 失败时清掉临时文件；删除本身再失败也不能盖掉原始异常
+        # （注意 except 要接 BaseException：安全策略拦删除时抛的是 SystemExit）。
+        try:
+            os.remove(tmp)
+        except BaseException:
+            pass
+        raise
+
+
 def _ca_info():
     return _read_json(CA_INFO_FILE) or {}
 
@@ -1186,9 +1213,8 @@ def _write_site_conf(proxy):
     }}
 }}
 '''
-    with open(os.path.join(PROXY_SITES_DIR, f'{service_name}.conf'), 'w',
-              encoding='utf-8') as f:
-        f.write(conf)
+    # 原子写：半截的 .conf 会让下次启动的 nginx -t 失败，进而拖垮整个容器。
+    _write_text_atomic(os.path.join(PROXY_SITES_DIR, f'{service_name}.conf'), conf)
 
 
 def _remove_site_conf(service_name):
@@ -1203,12 +1229,20 @@ def _proxy_cert_paths(service_name):
 
 
 def _write_proxy_cert(service_name, chain_text, key_src):
-    """写入 nginx 用的证书对，私钥权限收紧到 0600。"""
+    """写入 nginx 用的证书对，私钥权限收紧到 0600。
+
+    两个文件都原子写：半截的证书同样会让 nginx -t 失败（读不出 PEM），
+    而它和站点配置一样是「启动时会被整份校验」的文件。
+    """
     crt_path, key_path = _proxy_cert_paths(service_name)
-    with open(crt_path, 'w', encoding='utf-8') as f:
-        f.write(chain_text)
-    shutil.copyfile(key_src, key_path)
-    os.chmod(key_path, 0o600)
+    _write_text_atomic(crt_path, chain_text)
+    with open(key_src, 'rb') as src:
+        key_bytes = src.read()
+    key_tmp = f'{key_path}.tmp-{os.getpid()}'
+    with open(key_tmp, 'wb') as f:
+        f.write(key_bytes)
+    os.chmod(key_tmp, 0o600)
+    os.replace(key_tmp, key_path)
 
 
 def _copy_certificate(cert_id, service_name):

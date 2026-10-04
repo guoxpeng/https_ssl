@@ -23,7 +23,32 @@ env:
   IMAGE_NAME: nameguoguo/https_ssl
 
 jobs:
+  # 跑不过测试就不构建镜像：镜像一旦推上去，NAS 上的 dockermgr 会自动提示升级，
+  # 坏镜像很容易被顺手点上去。
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 冒烟测试（完整业务流程 + 原子落盘）
+        run: python scripts/smoke_test.py
+
+      - name: entrypoint fail-open 测试（配置坏了也要能起面板）
+        run: sh scripts/test_entrypoint_failopen.sh
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

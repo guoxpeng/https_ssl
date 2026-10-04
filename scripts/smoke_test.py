@@ -372,6 +372,66 @@ def run(workdir):
             check('HTTP 站点不写 ssl_certificate', 'ssl_certificate' not in conf, conf)
 
 
+    print('\n[18] 站点配置与证书原子落盘（不留下半截文件）')
+    # 半截的 .conf / .crt 会让容器下次启动时 nginx -t 整份校验失败，进而陷入
+    # 「启动→失败→重启」的崩溃循环。所以这两个文件必须「先写同目录临时文件，
+    # 再 os.replace 覆盖」，任何时刻磁盘上都只有完整的旧版本或完整的新版本。
+    qilin._write_site_conf({'id': 'atomic-1', 'original_url': 'http://127.0.0.1:8080/',
+                            'proxy_url': 'https://192.168.5.3:14444'})
+    sites_dir = qilin.PROXY_SITES_DIR
+    check('写站点配置后不残留临时文件',
+          not [f for f in os.listdir(sites_dir) if '.tmp-' in f],
+          str([f for f in os.listdir(sites_dir) if '.tmp-' in f]))
+
+    conf_path = os.path.join(sites_dir, 'atomic-1.conf')
+    with open(conf_path, encoding='utf-8') as f:
+        conf_text = f.read()
+    check('站点配置内容完整（server 块花括号闭合）',
+          conf_text.rstrip().endswith('}') and conf_text.count('{') == conf_text.count('}'),
+          conf_text[-60:])
+
+    qilin._write_site_conf({'id': 'atomic-1', 'original_url': 'http://127.0.0.1:9090/',
+                            'proxy_url': 'https://192.168.5.3:14445'})
+    with open(conf_path, encoding='utf-8') as f:
+        again = f.read()
+    check('覆盖写整体替换（新端口在、旧端口不在）',
+          '14445' in again and '14444' not in again, again[:200])
+
+    # 写失败时目标文件必须原样不动，临时文件也不能留下
+    snapshot = again
+    failed = False
+    try:
+        qilin._write_text_atomic(conf_path, None)   # 故意传非法内容触发异常
+    except Exception:
+        failed = True
+    with open(conf_path, encoding='utf-8') as f:
+        after = f.read()
+    check('写入失败时原文件保持不变', failed and after == snapshot)
+    check('写入失败后不残留临时文件',
+          not [f for f in os.listdir(sites_dir) if '.tmp-' in f],
+          str([f for f in os.listdir(sites_dir) if '.tmp-' in f]))
+
+    key_src = os.path.join(qilin.BASE_DIR, 'atomic-key.pem')
+    with open(key_src, 'w', encoding='utf-8') as f:
+        f.write('-----BEGIN PRIVATE KEY-----\nZmFrZQ==\n-----END PRIVATE KEY-----\n')
+    qilin._write_proxy_cert('atomic-1',
+                            '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n'
+                            '-----END CERTIFICATE-----\n', key_src)
+    certs_dir = qilin.PROXY_CERTS_DIR
+    check('写站点证书后不残留临时文件',
+          not [f for f in os.listdir(certs_dir) if '.tmp-' in f],
+          str([f for f in os.listdir(certs_dir) if '.tmp-' in f]))
+    crt_path, key_path = qilin._proxy_cert_paths('atomic-1')
+    with open(crt_path, encoding='utf-8') as f:
+        check('证书内容写入正确', f.read().startswith('-----BEGIN CERTIFICATE-----'))
+    if os.name == 'posix':
+        check('私钥权限是 0600',
+              (os.stat(key_path).st_mode & 0o777) == 0o600,
+              oct(os.stat(key_path).st_mode & 0o777))
+    else:
+        check('私钥文件已生成（权限位仅在 POSIX 上有意义）', os.path.isfile(key_path))
+
+
 def check_legacy_ca_migration(openssl_cmd, admin_password):
     """旧版本用 qilin-ca.* 命名，升级复用数据卷时必须自动认领。"""
     workdir = prepare_workspace()
